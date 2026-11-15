@@ -1,7 +1,7 @@
 # Peak Control — plan to v1
 
 Editor (VST3 + standalone, Windows) for the Novation Peak, firmware 2.1. Research and decisions: [RESEARCH.md](RESEARCH.md).
-Status 2026-11-15: core written and tested (steps 0 and 4, first pass, local git only); next: listening session (step 1) to fill byte offsets and value lists.
+Status 2026-11-15: core written and tested (steps 0 and 4, first pass, local git only); mockup approved for now (steps 5a/5b, fixes expected once the user works with it). Next: JUCE port (step 6) and the listening session (step 1).
 
 ## What I need from the user
 
