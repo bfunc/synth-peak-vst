@@ -230,8 +230,16 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
     modeBox.setEnabled (! juce::JUCEApplicationBase::isStandaloneApp());
     notesThru.setToggleState (s.notesThru, juce::dontSendNotification);
     playheads.setToggleState (s.playheads, juce::dontSendNotification);
+    follow.setToggleState (s.followChannel, juce::dontSendNotification);
+    follow.onClick = [this] { proc.setFollowChannel (follow.getToggleState()); };
+    addAndMakeVisible (follow);
 
-    channelBox.onChange = [this] { proc.setChannel (channelBox.getSelectedId()); };
+    channelBox.onChange = [this]
+    {
+        proc.setChannel (channelBox.getSelectedId());
+        proc.setFollowChannel (false);  // a channel picked by hand stays
+        follow.setToggleState (false, juce::dontSendNotification);
+    };
     modeBox.onChange = [this] { proc.setHostOutput (modeBox.getSelectedId() == 2); fillPorts(); };
     auto portsChanged = [this]
     {
@@ -272,7 +280,10 @@ void SetupPage::fillPorts()
 
 void SetupPage::refresh()
 {
-    lines = checklist (proc.link().status (proc.getSettings().channel));
+    const int ch = proc.getSettings().channel;
+    if (channelBox.getSelectedId() != ch)
+        channelBox.setSelectedId (ch, juce::dontSendNotification);
+    lines = checklist (proc.link().status (ch));
     juce::String key;
     for (const auto& l : lines)
         key << (int) l.level << l.text << "\n";
@@ -293,7 +304,12 @@ void SetupPage::resized()
     outBox.setBounds (row());
     rescan.setBounds (row().removeFromLeft (120));
     modeBox.setBounds (row());
-    channelBox.setBounds (row().removeFromLeft (160));
+    {
+        auto chRow = row();
+        channelBox.setBounds (chRow.removeFromLeft (160));
+        chRow.removeFromLeft (12);
+        follow.setBounds (chRow);
+    }
     left.removeFromTop (16);
     notesThru.setBounds (left.removeFromTop (26).withTrimmedLeft (130));
     playheads.setBounds (left.removeFromTop (26).withTrimmedLeft (130));

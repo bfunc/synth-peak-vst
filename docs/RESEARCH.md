@@ -40,6 +40,15 @@ Later (not v1): randomise / morph, XY performance, favourites, user wavetables, 
   Saved as `dumps/2026-11-13-editbuffer-perc-up-geo.syx` (patch "Perc Up GEO").
 - The Summit header (`01 11 01 33`) gets no answer.
 
+Confirmed 2026-11-15 (probe, read only; the user turned knobs on the Peak):
+
+- The user's Peak sends on **MIDI channel 13** (the editor now follows the channel it hears).
+- Slot request `41 00 00 00 <bank> <slot>` → reply cmd `01`, bank byte = request's bank (1 = A), slot byte; bank 0 → the
+  edit buffer (cmd `00`). A 000 = "Prophet 5 GEO", A 005 = "Shifter GEO".
+- 0–255 CC pairs: MSB CC first = value >> 1, then LSB CC = 0 or 64 (low bit << 6). Cutoff CC 29/61, Osc 1 Coarse CC 14/46.
+- Resonance CC 79, Osc 1 Range CC 3 (63–66), Filter Shape NRPN 0:46 (0–2) sent as CC 99 / 98 / 6 with no CC 38.
+- The fader the user moved as "Amp Attack" sent **CC 88** (the manual's Amp Sustain): to check which fader it was.
+
 ## SysEx patch format
 
 ```

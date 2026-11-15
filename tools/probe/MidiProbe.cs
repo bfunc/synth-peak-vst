@@ -32,6 +32,38 @@ public static class MidiProbe
     [DllImport("winmm.dll")] static extern uint midiOutLongMsg(IntPtr h, IntPtr hdr, uint size);
     [DllImport("winmm.dll")] static extern uint midiOutClose(IntPtr h);
 
+    delegate void MidiInProc(IntPtr h, uint msg, IntPtr inst, IntPtr p1, IntPtr p2);
+    [DllImport("winmm.dll")] static extern uint midiInOpen(out IntPtr h, uint id, MidiInProc cb, IntPtr inst, uint flags);
+    static MidiInProc keepAlive;
+    static readonly List<string> heard = new List<string>();
+    static DateTime t0;
+
+    // Logs every short message (CC, notes, program change...) arriving on inId for ms milliseconds.
+    // One line per message: time ms, channel, kind, data. Sends nothing.
+    public static string Listen(uint inId, int ms)
+    {
+        heard.Clear();
+        t0 = DateTime.Now;
+        keepAlive = (h, msg, inst, p1, p2) =>
+        {
+            if (msg != 0x3C3) return;  // MIM_DATA
+            uint m = (uint)p1.ToInt64();
+            int st = (int)(m & 0xFF), d1 = (int)((m >> 8) & 0x7F), d2 = (int)((m >> 16) & 0x7F);
+            if (st == 0xF8 || st == 0xFE) return;  // clock, active sensing
+            string kind = (st & 0xF0) == 0xB0 ? "CC " + d1 + " = " + d2 : (st & 0xF0) == 0xC0 ? "PC " + d1 : st.ToString("X2") + " " + d1 + " " + d2;
+            lock (heard) heard.Add(((int)(DateTime.Now - t0).TotalMilliseconds).ToString().PadLeft(6) + "  ch" + ((st & 0x0F) + 1) + "  " + kind);
+        };
+        IntPtr hin;
+        uint r = midiInOpen(out hin, inId, keepAlive, IntPtr.Zero, 0x30000);  // CALLBACK_FUNCTION
+        if (r != 0) return "midiInOpen failed " + r;
+        midiInStart(hin);
+        Thread.Sleep(ms);
+        midiInStop(hin);
+        midiInReset(hin);
+        midiInClose(hin);
+        lock (heard) return string.Join("\n", heard);
+    }
+
     const uint MHDR_DONE = 1;
     const int BUF = 4096, NBUF = 8;
 

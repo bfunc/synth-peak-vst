@@ -74,6 +74,7 @@ public:
         juce::String inPort, outPort;
         bool notesThru = true;    // pass incoming notes / bend / pressure on to the synth
         bool playheads = false;   // LFO sync playhead + envelope gate light (off by default)
+        bool followChannel = true;  // take the channel the Peak sends on
     };
     Settings getSettings() const;
     void setChannel (int);
@@ -81,6 +82,7 @@ public:
     void setPorts (const juce::String& in, const juce::String& out);
     void setNotesThru (bool);
     void setPlayheads (bool);
+    void setFollowChannel (bool);
     void sendAllParameters();  // every live parameter again (patch-only ones via a rewrite)
 
 private:
@@ -121,6 +123,7 @@ private:
     std::atomic<int> channel { 1 };
     std::atomic<bool> notesThru { true };
     std::atomic<bool> playheads { false };
+    std::atomic<bool> followChannel { true };
     peak::GateTracker gate;                  // audio thread
 
     // Notes to pass on in direct mode: audio thread -> pump thread.

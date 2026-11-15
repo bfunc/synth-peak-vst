@@ -50,6 +50,7 @@ private:
     void fillPorts();
     PeakProcessor& proc;
     juce::ComboBox inBox, outBox, channelBox, modeBox;
+    juce::ToggleButton follow { "Follow the Peak's channel" };
     juce::ToggleButton notesThru { "Pass notes to the Peak" }, playheads { "LFO sync playhead + envelope gate light" };
     juce::TextButton check { "Check again" }, sendAll { "Send all parameters" }, rescan { "Rescan ports" };
     std::vector<peak::CheckLine> lines;

@@ -12,6 +12,7 @@ const juce::Identifier kInPort { "inputPort" };
 const juce::Identifier kOutPort { "outputPort" };
 const juce::Identifier kNotesThru { "notesThru" };
 const juce::Identifier kPlayheads { "playheads" };
+const juce::Identifier kFollow { "followChannel" };
 double now() { return juce::Time::getMillisecondCounterHiRes(); }
 } // namespace
 
@@ -181,6 +182,9 @@ void PeakProcessor::timerCallback()
     paramCursor = peakLink->readParams (paramCursor, in);
     if (! in.empty())
     {
+        // The Peak's own channel can't be asked for; with "follow" on, the channel it sends on is the one to use.
+        if (followChannel.load() && in.back().index >= 0 && in.back().channel != channel.load())
+            setChannel (in.back().channel);
         const int ch = channel.load();
         const juce::ScopedLock sl (syncLock);
         for (const auto& e : in)
@@ -229,6 +233,7 @@ PeakProcessor::Settings PeakProcessor::getSettings() const
     s.outPort = peakLink->getOutputChoice();
     s.notesThru = notesThru.load();
     s.playheads = playheads.load();
+    s.followChannel = followChannel.load();
     return s;
 }
 
@@ -262,6 +267,12 @@ void PeakProcessor::setNotesThru (bool on)
     apvts.state.setProperty (kNotesThru, on, nullptr);
 }
 
+void PeakProcessor::setFollowChannel (bool on)
+{
+    followChannel = on;
+    apvts.state.setProperty (kFollow, on, nullptr);
+}
+
 void PeakProcessor::setPlayheads (bool on)
 {
     playheads = on;
@@ -292,6 +303,7 @@ void PeakProcessor::setStateInformation (const void* data, int size)
     peakLink->setPortChoice (apvts.state.getProperty (kInPort).toString(), apvts.state.getProperty (kOutPort).toString());
     notesThru = (bool) apvts.state.getProperty (kNotesThru, true);
     playheads = (bool) apvts.state.getProperty (kPlayheads, false);
+    followChannel = (bool) apvts.state.getProperty (kFollow, true);
     primeRequested = true;  // a loaded project does not overwrite the synth; Send does that
 }
 
