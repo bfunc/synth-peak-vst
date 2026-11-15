@@ -409,3 +409,37 @@ Open UI questions:
 
 WinMM probe (C#, run through PowerShell `Add-Type`), research only: `tools/probe/MidiProbe.cs`, usage in
 `tools/probe/README.md` (`[MidiProbe]::List()`, `[MidiProbe]::Ask(inId, outId, @("F0 …"), waitMs, outDir)`; Peak was in 5 / out 6).
+
+## Idea: playheads on LFO and envelope graphs (Vital / Serum style), 2026-11-15
+
+The plugin makes no sound and the Peak sends no LFO / envelope state, so every playhead is a **simulation** in the
+plugin, driven by what it can see: the notes it passes to the synth, the host transport (ppq, tempo, playing) and the
+patch values.
+
+| Indicator | How | Accuracy |
+|---|---|---|
+| Beat ruler / host position on sync'd graphs | host ppq | exact (it is the DAW's own position) |
+| LFO 1/2 in Sync range | host ppq + sync rate | close, **if** the Peak follows the DAW's MIDI clock and the LFO restarts the way we model it |
+| LFO 1/2 Low / High range | rate value -> Hz curve, phase reset at note-on when Phase is not Free | estimate; free-running phase is unknown and drifts |
+| LFO 3/4 (global) | rate / wave have no published NRPN, only the patch | estimate, after their bytes are mapped |
+| Envelopes, one dot per held note | note on / off times + A/D/S/R value -> ms curves | close once the curves are measured |
+
+Pitfalls:
+1. **Notes must pass through the plugin** (FL: notes in the generator's pattern go out via the plugin's MIDI out).
+   Notes sent straight to the Peak port, or played on a controller wired to the Peak, are invisible.
+   Standalone has no host transport and sees notes only from a MIDI input routed through it.
+2. **Unknown curves:** raw 0-127 / 0-255 -> ms / Hz is not published. Needs a measuring session: the user records
+   audio (e.g. LFO -> pitch / VCA, envelope -> VCA) at several values; I analyse the WAVs and fit curves.
+3. **Peak behaviour we would have to copy:** voice allocation and stealing (8 voices), Mono / Legato, Re-Trig vs
+   Legato trigger, LFO Phase (Free vs degrees), Common, One Shot, Fade modes, Slew, Key Sync, env Delay / Hold /
+   Repeats (2.x), Animate. Each one not modelled makes the dot wrong in that case.
+4. **Modulation:** mod-matrix slots on LFO rate or env times (and aftertouch / mod wheel / velocity behind them) change
+   timing live; the simulation can follow known sources (notes, velocity, CCs it passes on) but not all.
+5. **Clock:** sync'd LFOs and the arp follow the DAW only if the DAW sends MIDI clock to the Peak; otherwise they run
+   on the Peak's own tempo. Option: the plugin sends clock itself (beware a second clock from the DAW).
+6. **Timing:** USB MIDI and host buffering add a few ms of offset / jitter: fine for a display.
+7. **Menu edits on the Peak** are not transmitted, so the model uses stale values until Fetch.
+
+Cost: a note / transport FIFO from the audio thread, a voice model in the core (testable without the synth), UI repaint at
+30-60 fps. Suggested order: beat ruler + sync'd LFO dot and envelope dots with an "approximate" label first; curve
+measuring session later to make them match.
