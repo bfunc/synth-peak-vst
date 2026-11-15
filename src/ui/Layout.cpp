@@ -38,8 +38,8 @@ std::vector<PanelSpec> build()
     }
 
     v.push_back ({ "mixer", "Mixer",
-                   { { W::Knob, "mix_osc1", "Osc 1" }, { W::Knob, "mix_osc2", "Osc 2" }, { W::Knob, "mix_osc3", "Osc 3" },
-                     { W::Knob, "mix_ring", "Ring 1x2" }, { W::Knob, "mix_noise", "Noise" }, { W::Knob, "vca_gain", "VCA Gain" } },
+                   // Osc 1-3 levels sit at the end of each oscillator row (oscItems)
+                   { { W::Knob, "mix_ring", "Ring 1x2" }, { W::Knob, "mix_noise", "Noise" }, { W::Knob, "vca_gain", "VCA Gain" } },
                    // the mixer, plus the oscillator settings common to all three (drift, divergence, noise filters, FM)
                    [] (const ParamDef& d)
                    {
@@ -142,7 +142,8 @@ std::vector<Item> oscItems (int n)
              { W::Knob, k + "lfo2_pitch", "LFO 2" },
              { W::Knob, k + "vsync", "V-Sync" },
              { W::Knob, k + "saw_density", "Saw Dens" },
-             { W::Knob, fm[(n - 1) % 3], fmLabel[(n - 1) % 3] } };
+             { W::Knob, fm[(n - 1) % 3], fmLabel[(n - 1) % 3] },
+             { W::Knob, "mix_osc" + std::to_string (n), "Level" } };  // the mixer's level for this oscillator
 }
 
 std::vector<Item> envItems (const std::string& key)

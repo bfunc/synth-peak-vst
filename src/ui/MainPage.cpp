@@ -93,7 +93,7 @@ void WaveSelector::paint (juce::Graphics& g)
     const auto& wave = paramTable()[(size_t) waveIdx];
     const auto& tbl = paramTable()[(size_t) tableIdx];
     juce::String text = pos < 4 ? juce::String (formatValue (wave, pos)) : juce::String (formatValue (tbl, ctx.params.value ((size_t) tableIdx)));
-    if (pos >= 4)
+    if (pos >= 4 && r.getWidth() > 150)  // the "More" caption only when there is room next to the name
     {
         g.setFont (fontUi (9.5f, false));
         g.setColour (ink3);
@@ -180,7 +180,7 @@ void OscPanel::resized()
     knobIn (w.get (k + "coarse"), pitch.removeFromLeft (56));
     knobIn (w.get (k + "fine"), pitch);
 
-    auto shapeCol = r.removeFromRight (156 + 10 + 112 + 10 + 112);
+    auto shapeCol = r.removeFromRight (4 * 50 + 10 + 112 + 10 + 112);
     auto waveCol = r;
     wave.setBounds (waveCol.getX(), waveCol.getY() + 10, waveCol.getWidth(), 22);
     graph.setBounds (waveCol.getX(), waveCol.getY() + 36, waveCol.getWidth(), waveCol.getHeight() - 46);
@@ -197,10 +197,12 @@ void OscPanel::resized()
     knobIn (w.get (k + "lfo2_pitch"), mods);
     shapeCol.removeFromLeft (10);
     static const char* fm[] = { "fm_3to1", "fm_1to2", "fm_2to3" };
-    layoutRow (shapeCol, { w.get (k + "vsync"), w.get (k + "saw_density"), w.get (fm[(n - 1) % 3]) });
+    const auto level = "mix_osc" + std::to_string (n);
+    layoutRow (shapeCol, { w.get (k + "vsync"), w.get (k + "saw_density"), w.get (fm[(n - 1) % 3]), w.get (level) });
     for (const auto* id : { "vsync", "saw_density" })
         knobIn (w.get (k + id), w.get (k + id)->getBounds());
     knobIn (w.get (fm[(n - 1) % 3]), w.get (fm[(n - 1) % 3])->getBounds());
+    knobIn (w.get (level), w.get (level)->getBounds());
 }
 
 void OscPanel::refresh()
@@ -226,13 +228,9 @@ void MixerPanel::resized()
     PanelFrame::resized();
     auto r = content().reduced (8, 6);
     const auto& items = spec ("mixer").items;
-    auto top = r.removeFromTop (r.getHeight() / 2);
+    auto row = r.withSizeKeepingCentre (r.getWidth(), 90);
     for (size_t i = 0; i < items.size(); ++i)
-    {
-        auto& row = i < 3 ? top : r;
-        const int left = 3 - (int) (i % 3);
-        knobIn (w.get (items[i].id), row.removeFromLeft (row.getWidth() / left));
-    }
+        knobIn (w.get (items[i].id), row.removeFromLeft (row.getWidth() / (int) (items.size() - i)));
 }
 
 // ---- FilterPanel ----
