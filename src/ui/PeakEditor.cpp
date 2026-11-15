@@ -6,6 +6,7 @@
 #include "ui/Graphs.h"
 #include "ui/LibrarySetupPages.h"
 #include "ui/MainPage.h"
+#include "ui/PresetsPage.h"
 #include "ui/ModMap.h"
 
 using namespace peak;
@@ -104,8 +105,9 @@ private:
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [p = &proc] (const juce::FileChooser& fc)
         {
-            if (fc.getResult().existsAsFile())
-                p->library().importFile (fc.getResult());
+            // One patch: play it now (edit buffer). More: they show on the Presets tab under File.
+            if (fc.getResult().existsAsFile() && p->library().openFile (fc.getResult()) && p->library().file().size() == 1)
+                p->library().tryPatch (0);
         });
     }
 

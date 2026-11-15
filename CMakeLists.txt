@@ -25,6 +25,7 @@ add_library(peak_core STATIC
     src/core/Library.cpp
     src/core/Sync.cpp
     src/core/SlotWrite.cpp
+    src/core/BankWrite.cpp
     src/ui/Layout.cpp
     src/ui/ModMap.cpp)
 target_include_directories(peak_core PUBLIC src)
@@ -79,6 +80,7 @@ set(PEAK_PLUGIN_SOURCES
     src/ui/MainPage.cpp
     src/ui/FxMatrixPages.cpp
     src/ui/LibrarySetupPages.cpp
+    src/ui/PresetsPage.cpp
     src/ui/PeakEditor.cpp)
 target_sources(PeakControl PRIVATE ${PEAK_PLUGIN_SOURCES})
 

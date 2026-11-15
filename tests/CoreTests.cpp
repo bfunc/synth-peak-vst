@@ -1,6 +1,7 @@
 // Core tests: plain C++, no framework, no JUCE. Exit code 0 = all passed.
 // PEAK_TEST_DATA points at docs/dumps (set by CMake or the Docker script).
 
+#include "core/BankWrite.h"
 #include "core/Library.h"
 #include "core/Link.h"
 #include "core/Midi.h"
@@ -694,6 +695,90 @@ static void testModMap()
     CHECK (t.dest < 0);
 }
 
+
+// A fake synth for BankWrite: answers reads from its memory, applies writes; `deaf` slots never answer,
+// `corrupt` slots store something else.
+struct FakePeak
+{
+    std::map<int, PatchData> mem;
+    std::set<int> deaf, corrupt;
+    // Runs the sequence until it finishes (or 100000 steps); 10 ms per tick.
+    void run (BankWrite& w, bool storeBackup = true)
+    {
+        double t = 0;
+        for (int k = 0; k < 100000 && ! w.finished(); ++k, t += 10)
+        {
+            if (w.step() == BankWrite::Step::WaitBackupStored)
+                w.backupStored (storeBackup);
+            const auto a = w.action (t);
+            if (a.kind == BankWrite::Action::Kind::RequestSlot && ! deaf.count (a.slot))
+                w.gotPatch (a.bank, a.slot, mem[a.slot]);
+            if (a.kind == BankWrite::Action::Kind::WriteSlot)
+            {
+                mem[a.slot] = *a.data;
+                if (corrupt.count (a.slot))
+                    mem[a.slot][20] ^= 1;
+            }
+        }
+    }
+};
+
+static void testBankWrite()
+{
+    auto make = [] (const char* name)
+    {
+        auto p = initPatch();
+        setPatchName (p, name);
+        return p;
+    };
+    std::vector<BankWrite::Patch> bank;
+    for (int s = 0; s < 128; ++s)
+        bank.push_back ({ s, make (("New " + std::to_string (s)).c_str()) });
+
+    // The good path: backup holds the old patches, the synth ends up with the new ones, all checked.
+    FakePeak peak;
+    for (int s = 0; s < 128; ++s)
+        peak.mem[s] = make (("Old " + std::to_string (s)).c_str());
+    BankWrite w (2, bank, 50, 100, 200);
+    peak.run (w);
+    CHECK (w.step() == BankWrite::Step::Done);
+    CHECK (w.written() == 128 && w.checked() == 128 && w.mismatched() == 0);
+    CHECK (w.backup().size() == 128);
+    CHECK (patchName (w.backup()[0].data).rfind ("Old", 0) == 0);
+    CHECK (patchName (peak.mem[127]) == "New 127");
+    CHECK (w.progress() == 1.0f);
+
+    // A slot that never answers the backup read: nothing written.
+    FakePeak p2;
+    p2.deaf.insert (7);
+    BankWrite w2 (1, bank, 50, 100, 200);
+    p2.run (w2);
+    CHECK (w2.step() == BankWrite::Step::Failed && w2.written() == 0);
+    CHECK (p2.mem[0] == PatchData {});
+
+    // The backup could not be stored: nothing written.
+    FakePeak p3;
+    BankWrite w3 (1, bank, 50, 100, 200);
+    p3.run (w3, false);
+    CHECK (w3.step() == BankWrite::Step::Failed && w3.written() == 0);
+
+    // A slot that stores something else: reported.
+    FakePeak p4;
+    p4.corrupt.insert (3);
+    BankWrite w4 (4, bank, 50, 100, 200);
+    p4.run (w4);
+    CHECK (w4.step() == BankWrite::Step::Failed && w4.written() == 128 && w4.mismatched() == 1 && w4.checked() == 127);
+
+    // Part of a bank: only those slots are read, written and checked.
+    FakePeak p5;
+    BankWrite w5 (1, { { 10, make ("Ten") }, { 3, make ("Three") } }, 50, 100, 200);
+    p5.run (w5);
+    CHECK (w5.step() == BankWrite::Step::Done && w5.written() == 2 && p5.mem.count (50) == 0);
+    CHECK (patchName (p5.mem[3]) == "Three");
+
+    CHECK (BankWrite (1, {}).step() == BankWrite::Step::Failed);
+}
+
 int main()
 {
     testTable();
@@ -712,6 +797,7 @@ int main()
     testSync();
     testSlotWrite();
     testModMap();
+    testBankWrite();
     if (failures)
         std::printf ("%d FAILED\n", failures);
     else
