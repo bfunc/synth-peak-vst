@@ -1,13 +1,13 @@
 # Peak Control — research notes
 
 Editor (VST3 + standalone) for the Novation Peak, built like Trigon6 Control (`D:\Projects\hardware-synth-editors\sequential-trigon6-vst`).
-Started 2026-11-13. Status: **planning only, no code yet.**
+Started 2026-11-13. Status: **core (parameter table, MIDI, SysEx) written and tested 2026-11-15; no plugin yet.**
 
 ## Decisions so far
 
 | Topic | Decision |
 |---|---|
-| Repo | `D:\Projects\hardware-synth-editors\novation-peak-vst`, github `bfunc/synth-peak-vst`, AGPL (git / GitHub not created yet) |
+| Repo | `D:\Projects\hardware-synth-editors\novation-peak-vst`, github `bfunc/synth-peak-vst`, AGPL (local git since 2026-11-15; GitHub not created yet) |
 | Name | Peak Control |
 | Scope v1 | Main panel + Mod page (16-slot mod matrix, FX matrix) |
 | Style | Serum / Vital-style software layout in Peak colours, not a copy of the hardware front panel (no Novation logo, no "PEAK" wordmark) |
