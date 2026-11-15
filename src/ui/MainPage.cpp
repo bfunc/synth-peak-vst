@@ -137,6 +137,7 @@ OscPanel::OscPanel (UiContext& c, int osc) : PanelFrame (c, {}, "osc" + std::to_
         seg->setColumns (2);
     addAndMakeVisible (wave);
     addAndMakeVisible (graph);
+    refresh();
 }
 
 void OscPanel::paint (juce::Graphics& g)
@@ -186,7 +187,9 @@ void OscPanel::resized()
 
     shapeCol.removeFromLeft (10);
     auto shape = shapeCol.removeFromLeft (112);
-    knobIn (w.get (k + "shape"), shape.removeFromLeft (56));
+    const auto shapeCell = shape.removeFromLeft (56);
+    for (const char* id : { "shape", "env1_shape", "lfo1_shape" })
+        knobIn (w.get (k + id), shapeCell);
     place (w.get (k + "shape_src"), shape.withSizeKeepingCentre (54, 66));
     shapeCol.removeFromLeft (10);
     auto mods = shapeCol.removeFromLeft (112).withTrimmedBottom (14);
@@ -198,6 +201,20 @@ void OscPanel::resized()
     for (const auto* id : { "vsync", "saw_density" })
         knobIn (w.get (k + id), w.get (k + id)->getBounds());
     knobIn (w.get (fm[(n - 1) % 3]), w.get (fm[(n - 1) % 3])->getBounds());
+}
+
+void OscPanel::refresh()
+{
+    graph.refresh();
+    // One Shape knob, as on the Peak: it sets the amount of whichever Shape Source is selected.
+    const auto k = "osc" + std::to_string (n) + "_";
+    const int src = ctx.params.value ((size_t) indexOfId (k + "shape_src"));
+    if (src == lastSource)
+        return;
+    lastSource = src;
+    w[k + "shape"].setVisible (src == 0);
+    w[k + "env1_shape"].setVisible (src == 1);
+    w[k + "lfo1_shape"].setVisible (src == 2);
 }
 
 // ---- MixerPanel ----
@@ -224,6 +241,19 @@ FilterPanel::FilterPanel (UiContext& c) : PanelFrame (c, "Filter", "filter"), w 
 {
     w.add (*this, spec ("filter").items);
     addAndMakeVisible (graph);
+    refresh();
+}
+
+void FilterPanel::refresh()
+{
+    graph.refresh();
+    // One Env Depth knob, as on the Peak: it sets the depth of the envelope picked by Env Src.
+    const int env = ctx.params.value ((size_t) indexOfId ("flt_env_sel"));
+    if (env == lastEnv)
+        return;
+    lastEnv = env;
+    w["flt_ampenv"].setVisible (env == 0);
+    w["flt_modenv1"].setVisible (env == 1);
 }
 
 void FilterPanel::paint (juce::Graphics& g)
@@ -251,7 +281,7 @@ void FilterPanel::resized()
     auto big = r.removeFromLeft (86);
     knobIn (w.get ("flt_freq"), big.withSizeKeepingCentre (86, 106));
     const char* grid[2][5] = { { "flt_res", "flt_overdrive", "flt_postdrive", "flt_keytrack", "flt_divergence" },
-                               { "flt_ampenv", "flt_modenv1", "flt_lfo1", "flt_osc3", nullptr } };
+                               { "flt_ampenv", "flt_lfo1", "flt_osc3", nullptr, nullptr } };
     auto rows = r.reduced (0, 4);
     for (int row = 0; row < 2; ++row)
     {
@@ -261,6 +291,8 @@ void FilterPanel::resized()
             auto cell = line.removeFromLeft (line.getWidth() / (5 - c2));
             if (grid[row][c2] != nullptr)
                 knobIn (w.get (grid[row][c2]), cell);
+            if (grid[row][c2] != nullptr && std::string (grid[row][c2]) == "flt_ampenv")
+                knobIn (w.get ("flt_modenv1"), cell);  // the same place: Env Src picks which one shows
         }
     }
 }

@@ -363,7 +363,7 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     {
         const juce::ScopedLock sl (stateLock);
         st.lastAnyInMs = t;
-        programIn = { programIn.seq + 1, ch, bankIn[(size_t) (ch - 1)] + 1, m.getProgramChangeNumber() };
+        programIn = { programIn.seq + 1, ch, juce::jlimit (1, 4, bankIn[(size_t) (ch - 1)]), m.getProgramChangeNumber() };  // CC 32 = 1..4
         return;
     }
     if (! m.isController())

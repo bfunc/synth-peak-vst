@@ -23,8 +23,8 @@ struct ShortMsg
     uint8_t status, d1, d2;
 };
 
-// Load a stored patch: Bank Select (CC 0 = 0, CC 32 = bank - 1) then Program Change. bank 1..4 (A-D), slot 0..127.
-// Provisional: the Peak's bank numbering is to be confirmed on the synth.
+// Load a stored patch: Bank Select LSB (CC 32 = bank, 1..4 = A-D) then Program Change (slot 0..127).
+// This is what the Peak itself sends when a patch is picked on its panel (confirmed 2026-11-15; no CC 0).
 std::vector<ShortMsg> programChange (int channel, int bank, int slot);
 
 // What the connection has seen; filled by the link, read by the checklist.

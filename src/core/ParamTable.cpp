@@ -56,17 +56,23 @@ const Names kCategory { "None", "Arp", "Bass", "Bell", "Classic", "Drum", "Keybo
 const Names kGenre { "None", "Classic", "D&B/Breaks", "House", "Industrial", "Jazz", "R&B/HHop", "Rock/Pop",
                      "Techno", "Dubstep" };
 
-// Wave More 4-63 (provisional: whether the manual's table reads across or down is unchecked).
-const Names kWavetables { "BS sine", "String", "Glassy", "Spirals", "Random", "BassOrgn", "Granular", "Steel", "Zing",
-    "Acid", "Grime", "Sunrise", "Tubey", "Buzzy", "Drow", "Swell", "Octaves", "Carousel", "Heavy", "Thicker",
-    "Wobbler", "Choral", "Hedge", "Thinner", "Chords", "Climbing", "Hungry", "Tides", "Didgery", "CoinFlip",
-    "Ladders", "Tokyo", "Harsh", "Deep", "Lead", "Tops", "Organ", "Dub", "Modeling", "V.Chord", "E. Piano", "Eee",
-    "Modem", "Variance", "VoxOooEe", "Eris", "Monster", "Vocaloid", "VoxYahEe", "Flame", "Screech", "Vowelled",
-    "Winds", "Further", "SeaBase", "WeirdVox", "SoftClav", "GlassSaw", "Shmorgan", "Yeah" };
+// Wave More 4-63: the manual's wavetable table read down its four columns (confirmed by the list in
+// docs/WAVETABLES.md; read across, the order was wrong). Still to check on the OLED.
+const Names kWavetables {
+    "BS Sine", "Random", "Zing", "Tubey", "Octaves", "Wobbler", "Chords", "Didgery", "Harsh", "Organ", "E.Piano",
+    "VoxOooEe", "VoxYahEe", "Winds", "SoftClav", "String", "BassOrgan", "Acid", "Buzzy", "Carousel", "Choral",
+    "Climbing", "CoinFlip", "Deep", "Dub", "Eee", "Eris", "Flame", "Further", "GlassSaw", "Glassy", "Granular",
+    "Grime", "Grow", "Heavy", "Hedge", "Hungry", "Ladders", "Lead", "Modeling", "Modem", "Monster", "Screech",
+    "SeaBase", "Shmorgan", "Spirals", "Steels", "Sunrise", "Swell", "Thicker", "Thinner", "Tides", "Tokyo", "Tops",
+    "V.Chord", "Variance", "Vocaloid", "Vowelled", "WeirdVox", "Yeah" };
 
 const Names kLfoSync { "64 beats", "48 beats", "42 beats", "36 beats", "32 beats", "30 beats", "28 beats",
     "24 beats", "21+1/3", "20 beats", "18+2/3", "18 beats", "16 beats", "13+1/3", "12 beats", "10+2/3", "8 beats",
     "6 beats", "5+1/3", "4 beats", "3 beats", "2+2/3", "2nd", "4th D", "1+1/3", "4th", "8th D", "4th T", "8th",
+    "16th D", "8th T", "16th", "16th T", "32nd", "32nd T" };
+
+// Delay Sync Time: 16 values, the arp list from "4 beats" (confirmed: the Peak sends NRPN 0:94 = 0..15).
+const Names kDelaySync { "4 beats", "3 beats", "2+2/3", "2nd", "4th D", "1+1/3", "4th", "8th D", "4th T", "8th",
     "16th D", "8th T", "16th", "16th T", "32nd", "32nd T" };
 
 const Names kArpSync { "8 beats", "6 beats", "5+1/3", "4 beats", "3 beats", "2+2/3", "2nd", "4th D", "1+1/3",
@@ -338,7 +344,7 @@ std::vector<ParamDef> build()
     b.cc ("dly_time", "Delay Time", 109, 0, 127, 64);
     b.nrpn ("dly_width", "Delay Width", 0, 92, 0, 127, 127);
     onOff (b.nrpn ("dly_sync", "Delay Sync", 0, 93, 0, 1, 0));
-    choice (b.nrpn ("dly_sync_time", "Delay Sync Time", 0, 94, 0, 18, 11), kArpSync);  // provisional list
+    choice (b.nrpn ("dly_sync_time", "Delay Sync Time", 0, 94, 0, 15, 8), kDelaySync);  // default 4th T
     b.cc ("dly_feedback", "Delay Feedback", 110, 0, 127, 64);
     b.nrpn ("dly_lp_damp", "Delay LP Damp", 0, 95, 0, 127, 85);
     b.nrpn ("dly_hp_damp", "Delay HP Damp", 0, 96);
@@ -376,8 +382,9 @@ std::vector<ParamDef> build()
     onOff (b.nrpn ("arp_latch", "Arp Key Latch", 0, 122, 0, 1, 0));
     onOff (b.nrpn ("arp_keysync", "Arp Key Sync", 0, 123, 0, 1, 0));
     msb25 (b, "arp_chance", "Arp Chance", 33, 1, 100, 100);
-    onOff (b.cc ("anim1_hold", "Animate 1 Hold", 114, 0, 1, 0));
-    onOff (b.cc ("anim2_hold", "Animate 2 Hold", 115, 0, 1, 0));
+    // The Animate buttons send 127 when pressed and 0 when released (confirmed), not the manual's 0-1.
+    onOff (b.cc ("anim1_hold", "Animate 1 Hold", 114, 0, 1, 0)).onValue = 127;
+    onOff (b.cc ("anim2_hold", "Animate 2 Hold", 115, 0, 1, 0)).onValue = 127;
 
     // ---- Mod matrix: slot n = NRPN n:0..3 ----
     b.section = Section::ModMatrix;

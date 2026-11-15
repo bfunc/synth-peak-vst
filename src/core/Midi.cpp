@@ -9,7 +9,7 @@ int encodeParamInto (const ParamDef& p, int value, Cc out[3])
     switch (p.addr)
     {
         case Addr::Cc:
-            out[0] = { (uint8_t) p.num, (uint8_t) value };
+            out[0] = { (uint8_t) p.num, (uint8_t) (p.kind == Kind::Bool && value != 0 ? p.onValue : value) };
             return 1;
         case Addr::CcPair:
             out[0] = { (uint8_t) p.num, wideHigh (value) };
@@ -68,7 +68,7 @@ std::optional<ParamChange> CcDecoder::feed (uint8_t controller, uint8_t value)
         return std::nullopt;
     const auto& p = paramTable()[(size_t) i];
     if (p.addr == Addr::Cc)
-        return ParamChange { i, clampValue (p, value) };
+        return ParamChange { i, p.kind == Kind::Bool ? (value != 0 ? 1 : 0) : clampValue (p, value) };
 
     // CC pair: the MSB alone sets the value with the low bit cleared; the LSB that follows fills in the low bit.
     if (controller == p.num)

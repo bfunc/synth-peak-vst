@@ -40,8 +40,7 @@ PortPick pickPort (const std::vector<std::string>& names, const std::string& cho
 std::vector<ShortMsg> programChange (int channel, int bank, int slot)
 {
     const auto st = [&] (uint8_t kind) { return (uint8_t) (kind | ((channel - 1) & 0x0F)); };
-    return { { st (0xB0), 0, 0 },
-             { st (0xB0), 32, (uint8_t) std::clamp (bank - 1, 0, 3) },
+    return { { st (0xB0), 32, (uint8_t) std::clamp (bank, 1, 4) },
              { st (0xC0), (uint8_t) std::clamp (slot, 0, 127), 0 } };
 }
 

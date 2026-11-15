@@ -121,12 +121,15 @@ static void testFormat()
     CHECK (formatValue (param ("osc1_coarse"), 140) == "+12");
     CHECK (formatValue (param ("osc1_coarse"), 116) == "-12");
     CHECK (formatValue (param ("osc1_wave"), 2) == "Sawtooth");
-    CHECK (formatValue (param ("osc1_wavetable"), 4) == "BS sine");
+    CHECK (formatValue (param ("osc1_wavetable"), 4) == "BS Sine");
+    CHECK (formatValue (param ("osc1_wavetable"), 5) == "Random");
+    CHECK (formatValue (param ("osc1_wavetable"), 19) == "String");
     CHECK (formatValue (param ("osc1_wavetable"), 63) == "Yeah");
     CHECK (formatValue (param ("osc2_range"), 64) == "8'");
     CHECK (formatValue (param ("glide_on"), 1) == "On");
     CHECK (formatValue (param ("osc3_fixed_note"), 0) == "Off");
     CHECK (formatValue (param ("arp_sync"), 15) == "16th");
+    CHECK (formatValue (param ("dly_sync_time"), 0) == "4 beats" && formatValue (param ("dly_sync_time"), 8) == "4th T");
     CHECK (formatValue (param ("lfo1_sync"), 34) == "32nd T");
     CHECK (formatValue (param ("flt_res"), 999) == "127");  // clamped
 }
@@ -182,6 +185,14 @@ static void testDecode()
     CHECK (r && r->value == 1);
     CHECK (! d.feed (98, 8));  // unknown NRPN 0:8
     CHECK (! d.feed (6, 1));
+
+    // Animate buttons: 127 / 0 on the wire, on / off in the editor
+    CHECK (encodeParam (param ("anim1_hold"), 1)[0].value == 127);
+    CHECK (encodeParam (param ("glide_on"), 1)[0].value == 1);
+    r = d.feed (114, 127);
+    CHECK (r && r->index == indexOfId ("anim1_hold") && r->value == 1);
+    r = d.feed (114, 0);
+    CHECK (r && r->value == 0);
 
     // CC pair
     r = d.feed (29, 0x56);
@@ -411,11 +422,10 @@ static void testLink()
     CHECK (pickPort ({ "A", "B" }, "B").index == 1);
     CHECK (pickPort ({ "A" }, "").index == -1);
 
-    auto pc = programChange (2, 3, 17);
-    CHECK (pc.size() == 3);
-    CHECK (pc[0].status == 0xB1 && pc[0].d1 == 0 && pc[0].d2 == 0);
-    CHECK (pc[1].d1 == 32 && pc[1].d2 == 2);
-    CHECK (pc[2].status == 0xC1 && pc[2].d1 == 17);
+    auto pc = programChange (2, 3, 17);  // as the Peak sends it: CC 32 = 3 (bank C), PC 17
+    CHECK (pc.size() == 2);
+    CHECK (pc[0].status == 0xB1 && pc[0].d1 == 32 && pc[0].d2 == 3);
+    CHECK (pc[1].status == 0xC1 && pc[1].d1 == 17);
 
     LinkStatus s;
     auto lines = checklist (s);

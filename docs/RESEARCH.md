@@ -47,7 +47,18 @@ Confirmed 2026-11-15 (probe, read only; the user turned knobs on the Peak):
   edit buffer (cmd `00`). A 000 = "Prophet 5 GEO", A 005 = "Shifter GEO".
 - 0–255 CC pairs: MSB CC first = value >> 1, then LSB CC = 0 or 64 (low bit << 6). Cutoff CC 29/61, Osc 1 Coarse CC 14/46.
 - Resonance CC 79, Osc 1 Range CC 3 (63–66), Filter Shape NRPN 0:46 (0–2) sent as CC 99 / 98 / 6 with no CC 38.
-- The fader the user moved as "Amp Attack" sent **CC 88** (the manual's Amp Sustain): to check which fader it was.
+- Panel controls rechecked one by one (groups 1-4): envelopes (Amp 86-89, Mod 1 90-93, Mod 2 94/95/117/103, Mod Env
+  select NRPN 0:59), oscillators (Fine 15/47, Coarse 14/46 · 17/49 · 20/52, Shape source NRPN 0:16, Wave NRPN 0:14,
+  Env2 / LFO2 pitch 9 / 16+48), mixer 23-27 + 55-59, filter (Overdrive 80, Key track 75, LFO1 28/60, Osc3 76, Env
+  select NRPN 0:47, Slope NRPN 0:45), LFO rates 30/62 · 31/63, LFO1 Range NRPN 0:68, LFO2 Range CC 83, LFO2 Wave NRPN
+  0:78, FX (Dist 104, Chorus 105, Delay 108 / 110, Reverb 112 / 113), Glide 5 / 35, Arp on / latch NRPN 0:121 / 0:122,
+  Arp gate 116: all as in the manual. (The earlier "CC 88 from Attack" was the Sustain fader.)
+- Corrections to the manual: the panel **Shape** knob sends the amount of the selected Shape Source (CC 12 / 119 / 33
+  for Osc 1); the filter **Env Depth** knob sends CC 77 or 78 by the Env Select; **Delay Sync Time** is 16 values
+  (NRPN 0:94 = 0..15, "4 beats".."32nd T"); **Animate 1 / 2** send CC 114 / 115 = 127 on press, 0 on release.
+- **Program change from the panel: CC 32 = bank (1..4 = A-D), then Program Change**; no CC 0.
+- Unknown: NRPN 62:0 (0 / 1) comes with the wave button and with patch changes; the editor ignores it.
+- V-Sync is menu-only on the Peak.
 
 ## SysEx patch format
 

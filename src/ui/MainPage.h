@@ -33,10 +33,11 @@ public:
     OscPanel (UiContext&, int osc);
     void resized() override;
     void paint (juce::Graphics&) override;
-    void refresh() override { graph.refresh(); }
+    void refresh() override;
 
 private:
     int n;
+    int lastSource = -1;
     WidgetSet w;
     WaveSelector wave;
     WaveGraph graph;
@@ -58,9 +59,10 @@ public:
     explicit FilterPanel (UiContext&);
     void resized() override;
     void paint (juce::Graphics&) override;
-    void refresh() override { graph.refresh(); }
+    void refresh() override;
 
 private:
+    int lastEnv = -1;
     WidgetSet w;
     FilterGraph graph;
 };

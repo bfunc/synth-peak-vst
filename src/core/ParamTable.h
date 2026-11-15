@@ -60,6 +60,7 @@ struct ParamDef
     int center = 0;                    // Bipolar only
     std::vector<std::string> choices;  // Choice only: max - min + 1 names
     int offset = -1;   // byte in the 510 patch data bytes; -1 = not mapped yet
+    int onValue = 1;   // Bool CC only: the value sent for "on" (some Peak buttons use 127)
     bool wide() const { return max > 127; }  // 0-255: two bytes in the patch, coded like a CC pair
 };
 

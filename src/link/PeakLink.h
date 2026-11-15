@@ -122,7 +122,7 @@ private:
     size_t sentNext = 0;
 
     std::array<peak::CcDecoder, 16> decoders;  // MIDI thread only
-    std::array<int, 16> bankIn {};             // MIDI thread only: last Bank Select LSB per channel
+    std::array<int, 16> bankIn {};             // MIDI thread only: last Bank Select LSB (CC 32 = 1..4) per channel
 
     std::array<ParamIn, 512> paramsIn;  // ring (S)
     uint32_t paramInSeq = 0;            // (S)

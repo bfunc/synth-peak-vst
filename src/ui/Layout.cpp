@@ -50,8 +50,8 @@ std::vector<PanelSpec> build()
                    { { W::Segmented, "flt_shape", "" }, { W::Segmented, "flt_slope", "" }, { W::Segmented, "flt_env_sel", "Env Src" },
                      { W::BigKnob, "flt_freq", "Frequency" }, { W::Knob, "flt_res", "Resonance" },
                      { W::Knob, "flt_overdrive", "Overdrive" }, { W::Knob, "flt_postdrive", "Post Drive" },
-                     { W::Knob, "flt_keytrack", "Key Track" }, { W::Knob, "flt_ampenv", "Amp Env" },
-                     { W::Knob, "flt_modenv1", "Mod Env 1" }, { W::Knob, "flt_lfo1", "LFO 1" },
+                     { W::Knob, "flt_keytrack", "Key Track" }, { W::Knob, "flt_ampenv", "Env Depth" },
+                     { W::Knob, "flt_modenv1", "Env Depth" }, { W::Knob, "flt_lfo1", "LFO 1" },
                      { W::Knob, "flt_osc3", "Osc 3 Mod" }, { W::Knob, "flt_divergence", "Diverge" } },
                    section (Section::Filter) });
 
@@ -134,7 +134,9 @@ std::vector<Item> oscItems (int n)
              { W::Knob, k + "fine", "Fine" },
              { W::Stepper, k + "wave", "Wave" },
              { W::Stepper, k + "wavetable", "Wavetable" },
-             { W::Knob, k + "shape", "Shape" },
+             { W::Knob, k + "shape", "Shape" },          // shown when Shape Source = Manual
+             { W::Knob, k + "env1_shape", "Shape" },     // ... = ModEnv1 (the Peak's Shape knob sets this then)
+             { W::Knob, k + "lfo1_shape", "Shape" },     // ... = LFO1
              { W::SegmentedV, k + "shape_src", "" },
              { W::Knob, k + "env2_pitch", "Env 2" },
              { W::Knob, k + "lfo2_pitch", "LFO 2" },
