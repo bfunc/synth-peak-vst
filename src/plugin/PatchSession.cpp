@@ -76,9 +76,11 @@ void PatchSession::sendAll()
         return;
     }
     rewrite.cancel();
-    link.sendEditBuffer (build());
+    sentPatch = build();
+    link.sendEditBuffer (sentPatch);
     host.markAllSynced();
-    status = "Sent the whole patch to the Peak's edit buffer.";
+    status = "Sending the patch to the Peak's edit buffer...";
+    verifyAtMs = now() + 250;  // give the Peak a moment, then read it back
 }
 
 void PatchSession::loadSlot (int bank, int slot)
@@ -156,14 +158,44 @@ void PatchSession::tick (double nowMs)
         fetch();
     }
 
+    if (verifyAtMs > 0 && nowMs >= verifyAtMs && ! fetchPending)
+    {
+        verifyAtMs = -1;
+        verifyPending = true;
+        verifyAskedMs = nowMs;
+        link.requestEditBuffer();
+    }
+
     std::vector<PeakLink::PatchIn> in;
     patchCursor = link.readPatches (patchCursor, in);
     for (const auto& p : in)
-        if (fetchPending && p.patch.bank == 0)  // the edit buffer reply
+    {
+        if (p.patch.bank != 0)
+            continue;  // a stored slot: LibraryService's
+        if (verifyPending)
+        {
+            verifyPending = false;
+            if (p.patch.data == sentPatch)
+                status = juce::String ("Sent \"") + patchName (sentPatch) + "\" to the edit buffer and checked.";
+            else
+            {
+                int differ = 0;
+                for (size_t i = 0; i < sentPatch.size(); ++i)
+                    differ += p.patch.data[i] != sentPatch[i];
+                status = "Sent, but the Peak's edit buffer differs in " + juce::String (differ) + " bytes.";
+            }
+        }
+        else if (fetchPending)
         {
             fetchPending = false;
             apply (p.patch.data);
         }
+    }
+    if (verifyPending && nowMs - verifyAskedMs > kFetchTimeoutMs)
+    {
+        verifyPending = false;
+        status = "Sent, but the Peak did not answer the check. Is the port still open?";
+    }
     if (fetchPending && nowMs - fetchAskedMs > kFetchTimeoutMs)
     {
         fetchPending = false;

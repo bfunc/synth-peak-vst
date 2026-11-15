@@ -77,6 +77,10 @@ private:
     peak::PatchRewrite rewrite;
 
     bool fetchPending = false;
+    // Send: after writing the edit buffer, read it back and compare (so Send says whether the Peak took it).
+    bool verifyPending = false;
+    double verifyAtMs = -1, verifyAskedMs = 0;
+    peak::PatchData sentPatch {};
     double fetchAskedMs = 0;
     uint32_t patchCursor = 0;
     uint32_t programSeen = 0;
