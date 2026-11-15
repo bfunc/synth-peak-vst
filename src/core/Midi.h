@@ -21,6 +21,8 @@ struct Cc
 //   CcPair: MSB CC = value >> 1, then LSB CC = (value & 1) << 6  (the patch's own 0-255 coding; to verify live).
 //   Nrpn:   CC 99 = MSB, CC 98 = LSB, CC 6 = value. No CC 38: on the Peak that is Osc 2 ModEnv2 > Pitch.
 std::vector<Cc> encodeParam (const ParamDef& p, int value);
+// The same without allocating (for the audio thread): writes up to 3 CCs, returns how many.
+int encodeParamInto (const ParamDef& p, int value, Cc out[3]);
 
 // The same as raw MIDI bytes (status, controller, value per CC, no running status). channel is 1..16.
 std::vector<uint8_t> encodeParamBytes (const ParamDef& p, int value, int channel);

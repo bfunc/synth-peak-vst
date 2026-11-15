@@ -3,21 +3,34 @@
 namespace peak
 {
 
-std::vector<Cc> encodeParam (const ParamDef& p, int value)
+int encodeParamInto (const ParamDef& p, int value, Cc out[3])
 {
     value = clampValue (p, value);
     switch (p.addr)
     {
         case Addr::Cc:
-            return { { (uint8_t) p.num, (uint8_t) value } };
+            out[0] = { (uint8_t) p.num, (uint8_t) value };
+            return 1;
         case Addr::CcPair:
-            return { { (uint8_t) p.num, wideHigh (value) }, { (uint8_t) p.num2, wideLow (value) } };
+            out[0] = { (uint8_t) p.num, wideHigh (value) };
+            out[1] = { (uint8_t) p.num2, wideLow (value) };
+            return 2;
         case Addr::Nrpn:
-            return { { 99, (uint8_t) p.num }, { 98, (uint8_t) p.num2 }, { 6, (uint8_t) value } };
+            out[0] = { 99, (uint8_t) p.num };
+            out[1] = { 98, (uint8_t) p.num2 };
+            out[2] = { 6, (uint8_t) value };
+            return 3;
         case Addr::PatchOnly:
             break;
     }
-    return {};
+    return 0;
+}
+
+std::vector<Cc> encodeParam (const ParamDef& p, int value)
+{
+    Cc c[3];
+    const int n = encodeParamInto (p, value, c);
+    return std::vector<Cc> (c, c + n);
 }
 
 std::vector<uint8_t> encodeParamBytes (const ParamDef& p, int value, int channel)

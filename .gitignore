@@ -8,3 +8,4 @@ builds/
 docs/*.png
 docs/*.jpg
 docs/*.webp
+build-snap/

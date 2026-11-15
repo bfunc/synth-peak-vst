@@ -1,14 +1,24 @@
 // Core tests: plain C++, no framework, no JUCE. Exit code 0 = all passed.
 // PEAK_TEST_DATA points at docs/dumps (set by CMake or the Docker script).
 
+#include "core/Library.h"
+#include "core/Link.h"
 #include "core/Midi.h"
+#include "core/Patch.h"
+#include "core/Timing.h"
+#include "ui/Layout.h"
+#include "ui/ModMap.h"
 #include "core/ParamTable.h"
 #include "core/SendQueue.h"
+#include "core/SlotWrite.h"
+#include "core/Sync.h"
 #include "core/Sysex.h"
 
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -306,6 +316,370 @@ static void testSendQueue()
     CHECK (out.empty());
 }
 
+
+static void testPatchModel()
+{
+    const auto def = defaultValues();
+    CHECK (def.size() == paramTable().size());
+    const auto init = initPatch();
+    CHECK (patchName (init) == "Init Patch");
+    auto r = readValues (init, def);
+    CHECK (r.values == def);
+    CHECK (r.outOfRange.empty());
+    CHECK (r.read > 50);
+
+    const auto file = readFile (std::string (PEAK_TEST_DATA) + "/2026-11-13-editbuffer-perc-up-geo.syx");
+    auto msg = parsePatchMessage (file.data(), file.size());
+    CHECK (msg.has_value());
+    if (! msg)
+        return;
+    r = readValues (msg->data, def);
+    CHECK (r.outOfRange.empty());
+    // Unmapped parameters keep the fallback; mapped ones come from the dump.
+    CHECK (r.values[(size_t) indexOfId ("osc1_coarse")] == 128);
+    CHECK (r.values[(size_t) indexOfId ("unison_detune")] == 25);
+    // Writing the values back over the same bytes changes nothing (unmapped bytes are kept).
+    CHECK (writeValues (msg->data, r.values) == msg->data);
+
+    auto changed = r.values;
+    changed[(size_t) indexOfId ("mod2_depth")] = 10;
+    const auto d = writeValues (msg->data, changed);
+    CHECK (differing (r.values, changed).size() == 1);
+    CHECK (d[250 + 4 + 2] == 10);
+    CHECK (categoryName (msg->data) == "Keyboard");
+}
+
+static void testTiming()
+{
+    PatchRewrite pr (80, 300);
+    CHECK (! pr.due (0));
+    pr.touch (0);
+    CHECK (! pr.due (50));   // still turning
+    pr.touch (60);
+    CHECK (! pr.due (100));
+    CHECK (pr.due (150));    // quiet for 90 ms
+    CHECK (! pr.due (151));  // sent
+    pr.touch (200);
+    CHECK (! pr.due (300));  // quiet, but < 300 ms since the last send
+    CHECK (pr.due (460));
+
+    FetchPlan fp ({ { 1, 0 }, { 1, 1 }, { 1, 2 } }, 1000, 1);
+    auto a = fp.next (0);
+    CHECK (a && a->slot == 0);
+    CHECK (! fp.next (10));      // waiting for the reply
+    fp.gotReply (1, 0);
+    a = fp.next (20);
+    CHECK (a && a->slot == 1);
+    a = fp.next (1100);          // timeout: retry
+    CHECK (a && a->slot == 1);
+    a = fp.next (2200);          // second timeout: failed, next item
+    CHECK (a && a->slot == 2);
+    fp.gotReply (1, 1);          // a late reply for the failed one: ignored
+    CHECK (! fp.done());
+    fp.gotReply (1, 2);
+    CHECK (fp.done() && fp.finished() == 3 && fp.failed() == 1);
+    CHECK (fp.state (1) == FetchPlan::State::Failed);
+
+    GateTracker g;
+    g.noteOn (1, 60);
+    g.noteOn (1, 64);
+    g.noteOn (1, 60);  // again without an off: still one held, but counts as a trigger
+    CHECK (g.held() == 2 && g.onCount() == 3);
+    g.noteOff (1, 60);
+    g.noteOff (1, 61);
+    CHECK (g.held() == 1);
+    g.allOff();
+    CHECK (g.held() == 0);
+    g.noteOn (17, 60);
+    CHECK (g.held() == 0);
+
+    CHECK (lfoBeatsPerCycle (25) == 1.0);  // "4th"
+    CHECK (lfoBeatsPerCycle (0) == 64.0);
+    CHECK (lfoBeatsPerCycle (99) == lfoBeatsPerCycle (34));
+    CHECK (std::fabs (lfoSyncPhase (2.5, 25) - 0.5) < 1e-9);
+    CHECK (std::fabs (lfoSyncPhase (3.0, 22) - 0.5) < 1e-9);  // "2nd" = 2 beats
+    CHECK (lfoSyncPhase (-0.25, 25) > 0.7);
+    CHECK (param ("lfo1_sync").choices.size() == 35);
+}
+
+static void testLink()
+{
+    CHECK (pickPort ({ "Microsoft GS", "Peak", "MIDIIN2 (Peak)" }, "").index == 1);
+    CHECK (pickPort ({ "Microsoft GS", "MIDIIN2 (PEAK)" }, "").index == 1);
+    auto p = pickPort ({ "A", "Peak" }, "Other");
+    CHECK (p.index == 1 && p.savedMissing);
+    CHECK (pickPort ({ "A", "B" }, "B").index == 1);
+    CHECK (pickPort ({ "A" }, "").index == -1);
+
+    auto pc = programChange (2, 3, 17);
+    CHECK (pc.size() == 3);
+    CHECK (pc[0].status == 0xB1 && pc[0].d1 == 0 && pc[0].d2 == 0);
+    CHECK (pc[1].d1 == 32 && pc[1].d2 == 2);
+    CHECK (pc[2].status == 0xC1 && pc[2].d1 == 17);
+
+    LinkStatus s;
+    auto lines = checklist (s);
+    CHECK (! lines.empty() && lines[0].level == CheckLine::Level::Bad);
+    s.inName = s.outName = "Peak";
+    s.inOpen = s.outOpen = true;
+    s.inquirySentMs = 0;
+    s.inquiryReplyMs = 100;
+    s.isPeak = true;
+    s.firmware = "2.1.0.8";
+    s.nowMs = 5000;
+    s.ccInCount = 3;
+    s.lastCcChannel = s.pluginChannel = 1;
+    for (const auto& l : checklist (s))
+        CHECK (l.level == CheckLine::Level::Ok);
+    s.lastCcChannel = 2;
+    bool warned = false;
+    for (const auto& l : checklist (s))
+        warned |= l.level == CheckLine::Level::Warn;
+    CHECK (warned);
+}
+
+static void testLibrary()
+{
+    CHECK (slotLabel (1, 0) == "A 000" && slotLabel (4, 127) == "D 127");
+    Library lib;
+    CHECK (lib.loadedCount() == 0);
+    auto a = initPatch();
+    setPatchName (a, "Big Bass");
+    auto b = initPatch();
+    setPatchName (b, "Soft Pad");
+    lib.set (1, 5, a);
+    lib.set (2, 0, b);
+    lib.set (5, 0, b);  // no such bank: ignored
+    CHECK (lib.loadedCount() == 2);
+    CHECK (lib.at (1, 5).name == "Big Bass");
+    CHECK (lib.filter ("bass", "", true).size() == 1);
+    CHECK (lib.filter ("", "", true).size() == 2);
+    CHECK (lib.filter ("", "", false).size() == 512);
+    CHECK (lib.filter ("", "None", true).size() == 2);
+
+    // .syx round trips
+    auto one = parseSyx (patchFile (a));
+    CHECK (one.size() == 1 && one[0].cmd == PatchCmd::EditBuffer && one[0].data == a);
+    auto bank = bankFile (lib, 1);
+    CHECK (bank.size() == kPatchMessageBytes);
+    std::vector<uint8_t> junk { 0x90, 60, 100, 0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7 };
+    junk.insert (junk.end(), bank.begin(), bank.end());
+    auto parsed = parseSyx (junk);
+    CHECK (parsed.size() == 1 && parsed[0].bank == 1 && parsed[0].slot == 5 && parsed[0].data == a);
+}
+
+static void testLayout()
+{
+    using namespace peak::ui;
+    std::set<std::string> shown;
+    for (const auto& p : panels())
+    {
+        CHECK (p.owns != nullptr);
+        for (const auto& it : p.items)
+        {
+            if (indexOfId (it.id) < 0)
+            {
+                std::printf ("FAIL panel %s shows unknown parameter %s\n", p.key.c_str(), it.id.c_str());
+                ++failures;
+            }
+            shown.insert (it.id);
+        }
+    }
+    // Every parameter is either on a panel or in exactly one pop-out.
+    std::map<int, int> inMore;
+    for (const auto& p : panels())
+        for (int i : moreParams (p.key))
+            ++inMore[i];
+    const auto& t = paramTable();
+    for (int i = 0; i < (int) t.size(); ++i)
+    {
+        const bool onPanel = shown.count (t[(size_t) i].id) > 0;
+        const int more = inMore.count (i) ? inMore[i] : 0;
+        if (onPanel == (more > 0) || more > 1)
+        {
+            std::printf ("FAIL %s: on panel %d, in %d pop-outs\n", t[(size_t) i].id.c_str(), (int) onPanel, more);
+            ++failures;
+        }
+    }
+    CHECK (panel ("filter") != nullptr && panel ("nope") == nullptr);
+    auto has = [] (const std::string& key, const char* id)
+    {
+        for (int i : moreParams (key))
+            if (paramTable()[(size_t) i].id == id)
+                return true;
+        return false;
+    };
+    CHECK (has ("osc1", "osc1_fixed_note"));
+    CHECK (has ("mixer", "noise_lpf"));
+    CHECK (has ("voice", "pan"));
+    CHECK (has ("reverb", "rev_mod"));
+    CHECK (has ("env", "anim1_attack"));
+}
+
+
+static void testSync()
+{
+    SyncEngine e;
+    auto values = defaultValues();
+    e.markAllSynced (values.data(), values.size());
+
+    std::vector<int> liveIdx, patchIdx;
+    int ccCount = 0;
+    auto run = [&] (double now)
+    {
+        e.collect (now, [&] (size_t i) { return values[i]; },
+                   [&] (size_t i, int, const Cc*, int n) { liveIdx.push_back ((int) i); ccCount += n; },
+                   [&] (size_t i, int) { patchIdx.push_back ((int) i); });
+    };
+    run (0);
+    CHECK (liveIdx.empty() && patchIdx.empty());  // nothing changed
+
+    values[(size_t) indexOfId ("flt_res")] = 99;         // CC
+    values[(size_t) indexOfId ("arp_type")] = 3;         // NRPN
+    values[(size_t) indexOfId ("fxmod1_dest")] = 4;      // patch only
+    run (100);
+    CHECK (liveIdx.size() == 2 && ccCount == 4);
+    CHECK (patchIdx.size() == 1 && patchIdx[0] == indexOfId ("fxmod1_dest"));
+
+    liveIdx.clear();
+    e.markSynced ((size_t) indexOfId ("flt_res"), 50);  // the synth says 50 now; we still want 99
+    run (200);
+    CHECK (liveIdx.size() == 1);
+
+    liveIdx.clear();
+    patchIdx.clear();
+    e.markAllDirty();
+    for (int k = 0; k < 40; ++k)
+        run (1000 + k * 50.0);
+    CHECK ((int) (liveIdx.size() + patchIdx.size()) == (int) paramTable().size());
+
+    // encodeParamInto agrees with encodeParam
+    for (const auto& p : paramTable())
+    {
+        Cc c[3];
+        const int n = encodeParamInto (p, p.def, c);
+        const auto v = encodeParam (p, p.def);
+        CHECK ((size_t) n == v.size());
+        for (int k = 0; k < n; ++k)
+            CHECK (c[k].controller == v[(size_t) k].controller && c[k].value == v[(size_t) k].value);
+    }
+}
+
+static void testSlotWrite()
+{
+    using S = SlotWrite::Step;
+    using A = SlotWrite::Action;
+    auto patch = initPatch();
+    setPatchName (patch, "New");
+    auto old = initPatch();
+    setPatchName (old, "Old");
+
+    // The good path
+    SlotWrite w (4, 127, patch, 1000, 100);
+    CHECK (w.action (0) == A::RequestSlot);
+    CHECK (w.action (10) == A::None);
+    w.gotPatch (4, 126, old, 20);  // another slot: ignored
+    CHECK (! w.backup());
+    w.gotPatch (4, 127, old, 30);
+    CHECK (w.backup() && *w.backup() == old);
+    CHECK (w.action (40) == A::None);  // waits until the backup is stored
+    w.backupStored (true);
+    CHECK (w.action (50) == A::None);  // -> Write
+    CHECK (w.action (60) == A::WriteSlot);
+    CHECK (w.action (100) == A::None);
+    CHECK (w.action (170) == A::None);  // settled -> ReadBack
+    CHECK (w.action (180) == A::RequestSlot);
+    w.gotPatch (4, 127, patch, 200);
+    CHECK (w.step() == S::Done && w.finished());
+
+    // No backup reply: nothing is written
+    SlotWrite n (1, 0, patch, 1000, 100);
+    n.action (0);
+    for (double t = 0; t < 1200; t += 100)
+        CHECK (n.action (t) != A::WriteSlot);
+    CHECK (n.step() == S::Failed);
+
+    // Backup could not be saved: nothing is written
+    SlotWrite f (1, 0, patch, 1000, 100);
+    f.action (0);
+    f.gotPatch (1, 0, old, 10);
+    f.backupStored (false);
+    CHECK (f.action (20) == A::None);
+    CHECK (f.step() == S::Failed);
+
+    // Read-back differs
+    SlotWrite d (1, 0, patch, 1000, 0);
+    d.action (0);
+    d.gotPatch (1, 0, old, 10);
+    d.backupStored (true);
+    d.action (20);
+    CHECK (d.action (30) == A::WriteSlot);
+    d.action (40);
+    CHECK (d.action (50) == A::RequestSlot);
+    d.gotPatch (1, 0, old, 60);
+    CHECK (d.step() == S::Failed);
+}
+
+
+static void testModMap()
+{
+    using namespace peak::ui;
+    const auto& dests = param ("mod1_dest").choices;
+    const auto& fxDests = param ("fxmod1_dest").choices;
+    // Every named knob exists, and the lists cover every destination.
+    for (int d = 0; d < (int) dests.size(); ++d)
+    {
+        const auto id = paramForModDest (d);
+        if (! id.empty() && indexOfId (id) < 0)
+        {
+            std::printf ("FAIL mod dest %d -> unknown %s\n", d, id.c_str());
+            ++failures;
+        }
+        if (! id.empty())
+            CHECK (modDestForParam (id) == d);
+    }
+    for (int d = 0; d < (int) fxDests.size(); ++d)
+    {
+        const auto id = paramForFxDest (d);
+        if (! id.empty() && indexOfId (id) < 0)
+        {
+            std::printf ("FAIL fx dest %d -> unknown %s\n", d, id.c_str());
+            ++failures;
+        }
+    }
+    CHECK (paramForModDest ((int) dests.size()).empty());
+    CHECK (paramForModDest (18) == "flt_freq");   // FiltFreq
+    CHECK (paramForModDest (4) == "osc1_vsync");  // Osc1VSnc
+    CHECK (paramForFxDest (5) == "dly_level");    // Del Lev
+
+    CHECK (fxSourceForModSource (1) == 1);    // ModWheel
+    CHECK (fxSourceForModSource (14) == 7);   // Animate1
+    CHECK (fxSourceForModSource (8) == -1);   // Lfo1+/- can't reach FX
+    CHECK (fxSourceForModSource (23) == 16);  // Noise
+
+    // "Perc Up GEO": ModWheel -> FiltFreq +6, Animate2 -> Osc1VSnc +12
+    const auto file = readFile (std::string (PEAK_TEST_DATA) + "/2026-11-13-editbuffer-perc-up-geo.syx");
+    auto msg = parsePatchMessage (file.data(), file.size());
+    CHECK (msg.has_value());
+    if (! msg)
+        return;
+    auto v = readValues (msg->data, defaultValues()).values;
+    CHECK (std::fabs (modAmountFor ("flt_freq", v) - 6.0 / 64) < 1e-9);
+    CHECK (std::fabs (modAmountFor ("osc1_vsync", v) - 12.0 / 64) < 1e-9);
+    CHECK (modAmountFor ("flt_res", v) == 0.0);
+    CHECK (modAmountFor ("dly_level", v) > 0.0);  // FX slot 3: Animate1 -> Del Lev
+
+    // Drop: first free slot is 5 (slots 1-4 are in use)
+    auto t = slotForDrop (1, "flt_res", v);
+    CHECK (! t.fx && t.slot == 5 && t.dest == 19 && t.source == 1);
+    t = slotForDrop (1, "rev_time", v);
+    CHECK (t.fx && t.slot == 4 && t.dest == 9);
+    t = slotForDrop (8, "rev_time", v);  // LFO 1 onto an effect: no source
+    CHECK (t.source < 0);
+    t = slotForDrop (1, "arp_gate", v);  // not a destination
+    CHECK (t.dest < 0);
+}
+
 int main()
 {
     testTable();
@@ -316,6 +690,14 @@ int main()
     testDump();
     testWideCoding();
     testSendQueue();
+    testPatchModel();
+    testTiming();
+    testLink();
+    testLibrary();
+    testLayout();
+    testSync();
+    testSlotWrite();
+    testModMap();
     if (failures)
         std::printf ("%d FAILED\n", failures);
     else
