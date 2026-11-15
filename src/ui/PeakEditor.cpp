@@ -140,8 +140,11 @@ public:
         {
             juce::CallOutBox::launchAsynchronously (std::make_unique<SavePanel> (proc), saveBtn.getScreenBounds(), nullptr);
         };
+        compare.setTooltip ("Hold to hear the saved patch; release to go back to your edit");
+        compare.onPress = [this] { proc.beginCompare(); repaint(); };
+        compare.onRelease = [this] { proc.endCompare(); repaint(); };
         for (juce::Component* c : { (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &fetch,
-                                    (juce::Component*) &send, (juce::Component*) &saveBtn })
+                                    (juce::Component*) &send, (juce::Component*) &saveBtn, (juce::Component*) &compare })
             addAndMakeVisible (c);
     }
 
@@ -162,8 +165,9 @@ public:
         const auto st = proc.link().status (proc.midiChannel());
         auto text = proc.session().statusText() + "|" + proc.library().statusText();
         const int edited = proc.session().editedCount();
+        compare.setEnabled (compare.isHeld() || (proc.session().hasBaseline() && edited > 0));
         juce::String key;
-        key << (int) st.inOpen << (int) st.outOpen << (int) st.hostOutput << (int) st.isPeak << st.firmware << edited << proc.session().name()
+        key << (int) proc.comparing() << (int) st.inOpen << (int) st.outOpen << (int) st.hostOutput << (int) st.isPeak << st.firmware << edited << proc.session().name()
             << proc.session().originText() << proc.midiChannel();
         if (text != lastStatus)
         {
@@ -203,12 +207,14 @@ public:
         auto o = oledRect();
         prev.setBounds (o.getX() - 24, o.getY(), 22, o.getHeight());
         next.setBounds (o.getRight() + 2, o.getY(), 22, o.getHeight());
-        auto a = juce::Rectangle<int> (next.getRight() + 12, 15, 222, 26);
+        auto a = juce::Rectangle<int> (next.getRight() + 12, 15, 312, 26);
         fetch.setBounds (a.removeFromLeft (70));
         a.removeFromLeft (6);
         send.setBounds (a.removeFromLeft (64));
         a.removeFromLeft (6);
         saveBtn.setBounds (a.removeFromLeft (64));
+        a.removeFromLeft (6);
+        compare.setBounds (a.removeFromLeft (84));
     }
 
     void paint (juce::Graphics& g) override
@@ -264,7 +270,8 @@ public:
         const auto cat = categoryText();
         g.setFont (fontMono (10.0f));
         g.setColour (showMsg ? led.withAlpha (0.9f) : ink3);
-        g.drawText (showMsg ? message : (juce::String (proc.session().originText()).toUpperCase() + (cat.isNotEmpty() ? "  " + cat : "")),
+        g.drawText (proc.comparing() ? juce::String ("HEARING THE SAVED PATCH")
+                    : showMsg ? message : (juce::String (proc.session().originText()).toUpperCase() + (cat.isNotEmpty() ? "  " + cat : "")),
                     in.removeFromTop (13), juce::Justification::centredLeft);
         g.setFont (fontMono (15.0f));
         g.setColour (accent);
@@ -282,23 +289,21 @@ public:
         // Connection
         const auto st = proc.link().status (proc.midiChannel());
         const bool ok = (st.hostOutput || st.outOpen) && st.inOpen;
-        auto c = juce::Rectangle<int> (saveBtn.getRight() + 18, 0, getWidth() - saveBtn.getRight() - 30, getHeight());
+        auto c = juce::Rectangle<int> (compare.getRight() + 16, 0, getWidth() - compare.getRight() - 24, getHeight());
         g.setColour (ok ? accent : juce::Colour (0xff3a2a1f));
         g.fillEllipse ((float) c.getX(), (float) c.getCentreY() - 3.5f, 7, 7);
         g.setColour (ink2);
         g.setFont (fontUi (11.5f, false));
-        juce::String t = ok ? "PEAK" : "NOT CONNECTED";
-        t << "  CH " << proc.midiChannel();
-        if (st.firmware.size() > 0)
-            t << "  FW " << juce::String (st.firmware).upToLastOccurrenceOf (".", false, false).upToLastOccurrenceOf (".", false, false);
+        juce::String t = ok ? "PEAK" : "OFFLINE";
+        t << " " << juce::String::charToString ((juce::juce_wchar) 0x00B7) << " CH " << proc.midiChannel();
         if (st.hostOutput)
-            t << "  VIA DAW";
+            t << " DAW";
         g.drawText (t, c.withTrimmedLeft (14), juce::Justification::centredLeft);
     }
 
 private:
     juce::Rectangle<int> tabRect (int i) const { return { 176 + i * 88, 0, 88, getHeight() - 1 }; }
-    juce::Rectangle<int> oledRect() const { return { 176 + names.size() * 88 + 34, 8, 262, 40 }; }
+    juce::Rectangle<int> oledRect() const { return { 176 + names.size() * 88 + 34, 8, 222, 40 }; }
 
     juce::String categoryText() const
     {
@@ -326,6 +331,7 @@ private:
     int page = 0;
     juce::TextButton prev { juce::CharPointer_UTF8 ("\xe2\x80\xb9") }, next { juce::CharPointer_UTF8 ("\xe2\x80\xba") };
     juce::TextButton fetch { "Fetch" }, send { "Send" }, saveBtn { "Save" };
+    HoldButton compare { "Compare" };
     juce::String message, lastStatus, lastLib, lastKey;
     double messageUntil = 0;
 };

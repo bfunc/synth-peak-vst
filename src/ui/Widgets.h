@@ -117,6 +117,46 @@ private:
     std::unique_ptr<juce::ParameterAttachment> attachment;
 };
 
+// A push button that acts while held: onPress on mouse down, onRelease on mouse up (also if the mouse leaves the
+// window or the button goes away while held, so a release is never lost). Lit while held.
+class HoldButton : public juce::TextButton
+{
+public:
+    using juce::TextButton::TextButton;
+    ~HoldButton() override { release(); }
+    std::function<void()> onPress, onRelease;
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        if (! isEnabled() || held)
+            return;
+        held = true;
+        setToggleState (true, juce::dontSendNotification);
+        if (onPress)
+            onPress();
+    }
+    void mouseUp (const juce::MouseEvent&) override { release(); }
+    void focusLost (FocusChangeType) override { release(); }
+    void enablementChanged() override
+    {
+        juce::TextButton::enablementChanged();
+        if (! isEnabled())
+            release();
+    }
+    void release()
+    {
+        if (! held)
+            return;
+        held = false;
+        setToggleState (false, juce::dontSendNotification);
+        if (onRelease)
+            onRelease();
+    }
+    bool isHeld() const { return held; }
+
+private:
+    bool held = false;
+};
+
 // A horizontal bipolar bar (mod matrix depth).
 class ParamBar : public ParamWidget
 {

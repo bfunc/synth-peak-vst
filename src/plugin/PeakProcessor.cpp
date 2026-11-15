@@ -50,7 +50,7 @@ void PeakProcessor::runSync (EmitCc&& emitCc)
     if (sendAllRequested.exchange (false))
         sync.markAllDirty();
 
-    sync.collect (now(), [this] (size_t i) { return bridge.value (i); }, emitCc,
+    sync.collect (now(), [this] (size_t i) { return syncValue (i); }, emitCc,
                   [this] (size_t, int) { ++patchOnlyChanges; });
 }
 
@@ -219,8 +219,33 @@ void PeakProcessor::markAllSynced()
 {
     const juce::ScopedLock sl (syncLock);
     for (size_t i = 0; i < bridge.size(); ++i)
-        sync.markSynced (i, bridge.value (i));
+        sync.markSynced (i, syncValue (i));
 }
+
+int PeakProcessor::syncValue (size_t i) const
+{
+    if (previewing.load (std::memory_order_acquire) && i < previewValues.size())
+        return previewValues[i];
+    return bridge.value (i);
+}
+
+Values PeakProcessor::soundingValues() const
+{
+    Values v (bridge.size());
+    for (size_t i = 0; i < v.size(); ++i)
+        v[i] = syncValue (i);
+    return v;
+}
+
+void PeakProcessor::beginCompare()
+{
+    if (previewing.load() || ! patch->hasBaseline() || patch->editedCount() == 0)
+        return;
+    previewValues = patch->baselineValues();
+    previewing.store (true, std::memory_order_release);
+}
+
+void PeakProcessor::endCompare() { previewing.store (false, std::memory_order_release); }
 
 void PeakProcessor::sendAllParameters() { sendAllRequested = true; }
 

@@ -19,6 +19,8 @@ class SessionHost
 public:
     virtual ~SessionHost() = default;
     virtual peak::Values currentValues() const = 0;
+    // What the synth should be playing: the current values, or the saved ones while Compare is held.
+    virtual peak::Values soundingValues() const { return currentValues(); }
     // The synth now has these values: show them, and don't send them back.
     virtual void applyFromSynth (const peak::Values&) = 0;
     // The synth got the whole patch: every current value counts as sent.

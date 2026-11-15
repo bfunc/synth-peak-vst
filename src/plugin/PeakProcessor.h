@@ -55,6 +55,7 @@ public:
 
     // ---- SessionHost ----
     peak::Values currentValues() const override { return bridge.values(); }
+    peak::Values soundingValues() const override;
     void applyFromSynth (const peak::Values&) override;
     void markAllSynced() override;
     int midiChannel() const override { return channel.load(); }
@@ -84,6 +85,12 @@ public:
     void setPlayheads (bool);
     void setFollowChannel (bool);
     void sendAllParameters();  // every live parameter again (patch-only ones via a rewrite)
+
+    // Compare: while held, the synth plays the saved patch (only the differing parameters are sent); the editor keeps
+    // showing the edit. Message thread. begin does nothing when there is nothing saved to compare with.
+    void beginCompare();
+    void endCompare();
+    bool comparing() const { return previewing.load(); }
 
 private:
     void timerCallback() override;
@@ -119,6 +126,10 @@ private:
     std::atomic<bool> sendAllRequested { false };
     std::atomic<uint32_t> patchOnlyChanges { 0 };  // bumped when a patch-only parameter is due
     uint32_t patchOnlySeen = 0;                     // message thread
+
+    int syncValue (size_t i) const;  // what goes to the synth: the edit, or the saved value while comparing
+    std::atomic<bool> previewing { false };
+    peak::Values previewValues;          // written only while previewing is false
 
     std::atomic<int> channel { 1 };
     std::atomic<bool> notesThru { true };

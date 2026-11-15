@@ -204,7 +204,7 @@ void PatchSession::tick (double nowMs)
 
     if (rewrite.due (nowMs) && link.canSend())
     {
-        link.sendEditBuffer (build());
+        link.sendEditBuffer (writeValues (base, host.soundingValues()));
         host.markAllSynced();
     }
 }
