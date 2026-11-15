@@ -447,3 +447,5 @@ measuring session later to make them match.
 **Decision (2026-11-15):** only the easy, well-approximated part. An LFO playhead appears only while that LFO is in
 Sync range, driven by the host position (ppq) and the sync rate, with an "approx" label. Off by default (a setting
 turns it on). No envelope dots, no free-running LFO dots, no curve measuring for this.
+Envelopes get only a **gate light** (no moving dot): an LED on the envelope panel, lit while notes passing through the
+plugin are held (with the count), flashing on each note-on. Exact, so no "approx" label. Same setting, off by default.
