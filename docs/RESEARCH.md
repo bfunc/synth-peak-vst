@@ -443,3 +443,7 @@ Pitfalls:
 Cost: a note / transport FIFO from the audio thread, a voice model in the core (testable without the synth), UI repaint at
 30-60 fps. Suggested order: beat ruler + sync'd LFO dot and envelope dots with an "approximate" label first; curve
 measuring session later to make them match.
+
+**Decision (2026-11-15):** only the easy, well-approximated part. An LFO playhead appears only while that LFO is in
+Sync range, driven by the host position (ppq) and the sync rate, with an "approx" label. Off by default (a setting
+turns it on). No envelope dots, no free-running LFO dots, no curve measuring for this.
