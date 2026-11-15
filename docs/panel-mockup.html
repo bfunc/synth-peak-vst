@@ -1,0 +1,724 @@
+<title>Peak Control Preview</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: fixed 1360×800 editor stage (scaled to fit), Vital-style columns:
+   source rail | swapping centre view (Main / FX / Matrix) | persistent modulators column.
+   Single committed dark look in Peak colours: black chassis, cyan section lines, orange LEDs. */
+:root{
+  color-scheme: dark;
+  --void:#07090b; --chassis:#0f1215; --panel:#161a1f; --panel-hi:#1d2229; --well:#090b0e;
+  --edge:#252c34; --edge-hi:#323a44;
+  --ink:#e6ebf0; --ink-2:#9ba7b3; --ink-3:#5e6a76;
+  --peak:#35b6e8; --peak-dim:rgba(53,182,232,.15); --peak-glow:rgba(53,182,232,.35);
+  --led:#ff7a1a; --led-dim:rgba(255,122,26,.16);
+  --knob:#23292f; --knob-hi:#2f363e; --wood-a:#5a3520; --wood-b:#3b2214;
+  --f-ui:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Barlow",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+html,body{background:var(--void);color:var(--ink)}
+body{font-family:var(--f-body)}
+.page{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 28px;max-width:1440px;margin:0 auto}
+.intro{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;margin-bottom:14px}
+.intro h1{font-family:var(--f-ui);font-weight:600;font-size:20px;letter-spacing:.06em;margin:0;text-transform:uppercase}
+.intro h1 span{color:var(--peak)}
+.intro p{margin:0;color:var(--ink-2);font-size:14px;max-width:70ch}
+.fit{position:relative;width:100%;overflow:hidden}
+.stage{width:1360px;height:800px;transform-origin:0 0;position:absolute;left:0;top:0;
+  background:var(--chassis);border-radius:6px;display:flex;flex-direction:column;
+  box-shadow:0 0 0 1px #000,0 30px 60px -20px rgba(0,0,0,.8);
+  font-family:var(--f-ui);font-size:12px;user-select:none;-webkit-user-select:none;overflow:hidden}
+.stage::before,.stage::after{content:"";position:absolute;top:0;bottom:0;width:9px;z-index:3;
+  background:repeating-linear-gradient(180deg,var(--wood-a) 0 7px,var(--wood-b) 7px 9px,var(--wood-a) 9px 15px);opacity:.9}
+.stage::before{left:0;border-radius:6px 0 0 6px}.stage::after{right:0;border-radius:0 6px 6px 0}
+.foot{color:var(--ink-3);font-size:13px;margin:14px 0 0;max-width:90ch;line-height:1.5}
+.foot b{color:var(--ink-2);font-weight:600}
+
+/* ---------- top bar ---------- */
+.top{height:56px;display:flex;align-items:center;gap:14px;padding:0 22px;background:linear-gradient(#1a1f25,#12161a);border-bottom:1px solid #000}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:17px;letter-spacing:.14em;width:150px}
+.brand svg{width:26px;height:26px}
+.brand span{color:var(--ink-3);font-weight:500;font-size:11px;letter-spacing:.2em;margin-left:-2px}
+.tabs{display:flex;height:100%}
+.tabs button{all:unset;cursor:pointer;width:96px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  font-weight:600;letter-spacing:.14em;color:var(--ink-3);border-left:1px solid #000;background:linear-gradient(#171b20,#111418)}
+.tabs button:last-child{border-right:1px solid #000}
+.tabs button i{width:5px;height:5px;border-radius:50%;background:#2a3038}
+.tabs button.on{color:var(--ink);background:linear-gradient(#20262d,#191d22)}
+.tabs button.on i{background:var(--peak);box-shadow:0 0 6px var(--peak)}
+.tabs button:focus-visible,.btn:focus-visible,.arr:focus-visible{outline:2px solid var(--peak);outline-offset:-2px}
+.preset{display:flex;align-items:stretch;flex:1;max-width:400px;margin-left:8px;height:40px}
+.oled{flex:1;background:var(--well);border:1px solid #000;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);padding:4px 10px;display:flex;flex-direction:column;justify-content:center;font-family:var(--f-mono)}
+.oled small{font-size:9.5px;color:var(--ink-3);letter-spacing:.08em}
+.oled b{font-weight:500;font-size:15px;color:var(--peak);letter-spacing:.04em}
+.oled b em{font-style:normal;color:var(--led);margin-left:6px}
+.arr{all:unset;cursor:pointer;width:22px;display:grid;place-items:center;color:var(--ink-2);background:var(--panel-hi);border:1px solid #000;font-size:14px}
+.arr:hover{color:var(--ink)}
+.btn{all:unset;cursor:pointer;padding:0 12px;height:26px;display:inline-grid;place-items:center;background:linear-gradient(#262c33,#1c2127);border:1px solid #000;border-radius:2px;
+  font-weight:600;font-size:11px;letter-spacing:.1em;color:var(--ink-2);text-transform:uppercase}
+.btn:hover{color:var(--ink)}
+.btn.on{color:var(--void);background:var(--led);box-shadow:0 0 10px var(--led-dim)}
+.actions{display:flex;gap:6px}
+.midi{display:flex;align-items:center;gap:7px;color:var(--ink-2);font-size:11px;letter-spacing:.06em;margin-left:auto}
+.led{width:7px;height:7px;border-radius:50%;background:#3a2a1f;display:inline-block}
+.led.on{background:var(--led);box-shadow:0 0 6px var(--led)}
+.led.c.on{background:var(--peak);box-shadow:0 0 6px var(--peak)}
+
+/* ---------- body columns ---------- */
+.body{flex:1;display:grid;grid-template-columns:76px 812px 1fr;gap:8px;padding:8px 18px 10px;min-height:0}
+.panel{background:var(--panel);border-top:2px solid var(--peak);position:relative;border-radius:0 0 3px 3px;box-shadow:0 1px 0 #000}
+.ph{display:flex;align-items:center;justify-content:space-between;height:20px;padding:0 8px;font-weight:700;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase}
+.ph .more{all:unset;cursor:pointer;color:var(--peak);font-size:9px}
+.ph .more:hover{filter:brightness(1.4)}
+.cap{font-size:9.5px;font-weight:600;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase;text-align:center}
+
+/* rail */
+.rail{display:flex;flex-direction:column;gap:6px}
+.rail .ttl{font-size:9.5px;letter-spacing:.14em;color:var(--ink-3);text-align:center;padding:4px 0 2px;font-weight:600}
+.src{background:var(--panel);border-top:2px solid var(--edge-hi);padding:8px 4px 7px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:grab;
+  font-weight:600;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);text-align:center;line-height:1.1}
+.src:hover{border-top-color:var(--led);color:var(--ink)}
+.src:active{cursor:grabbing}
+.pad{width:38px;height:38px;border-radius:3px;background:linear-gradient(#e9edf0,#b9c0c6);box-shadow:inset 0 -2px 0 rgba(0,0,0,.25),0 1px 0 #000;display:grid;place-items:center;color:#2a3036;font-size:14px;font-weight:700}
+.pad.lit{background:linear-gradient(#ffb070,#ff7a1a);box-shadow:0 0 12px var(--led-dim),inset 0 -2px 0 rgba(0,0,0,.2)}
+.meter{width:42px;height:6px;background:var(--well);border:1px solid #000;position:relative;overflow:hidden}
+.meter i{position:absolute;left:0;top:0;bottom:0;background:var(--led)}
+.drag-hint{margin-top:auto;font-size:9.5px;color:var(--ink-3);text-align:center;line-height:1.3;letter-spacing:.04em}
+.drag-hint b{color:var(--led);font-weight:600}
+
+/* views */
+.center{min-width:0;position:relative}
+.view{position:absolute;inset:0;display:none;flex-direction:column;gap:8px}
+.view.on{display:flex}
+
+/* knobs */
+.k{width:52px;display:flex;flex-direction:column;align-items:center;cursor:ns-resize;position:relative;flex:none}
+.k svg{width:44px;height:44px;overflow:visible}
+.k .tr{fill:none;stroke:#0a0c0f;stroke-width:3.2;stroke-linecap:round}
+.k .va{fill:none;stroke:var(--peak);stroke-width:3.2;stroke-linecap:round}
+.k .mr{fill:none;stroke:var(--led);stroke-width:2;stroke-linecap:round;opacity:.95}
+.k .bd{fill:var(--knob);stroke:#000;stroke-width:1}
+.k .pt{stroke:var(--ink);stroke-width:2.2;stroke-linecap:round}
+.k output{font-family:var(--f-mono);font-size:9.5px;color:var(--ink-2);margin-top:-2px;height:12px;line-height:12px}
+.k .kl{font-size:9.5px;font-weight:600;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase;white-space:nowrap;margin-top:1px}
+.k:hover .kl,.k.drag .kl{color:var(--ink)}
+.k:hover output,.k.drag output{color:var(--peak)}
+.k.big{width:76px}.k.big svg{width:66px;height:66px}
+.k.sm{width:44px}.k.sm svg{width:36px;height:36px}
+.k.hasmod .kl{color:var(--led)}
+.top .k output{display:none}.top .k .kl{font-size:8.5px}
+.dragging .k[data-dest],.dragging .k[data-fx]{outline:1px dashed var(--led-dim);outline-offset:1px;border-radius:4px}
+.k.over{outline:1px solid var(--led)!important;background:var(--led-dim);border-radius:4px}
+
+/* segmented + toggles */
+.seg{display:flex;background:var(--well);border:1px solid #000;border-radius:2px;padding:1px;gap:1px}
+.seg button{all:unset;cursor:pointer;flex:1;text-align:center;padding:3px 5px;font-weight:600;font-size:10px;letter-spacing:.06em;color:var(--ink-3);border-radius:1px;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:var(--knob-hi);color:var(--ink);box-shadow:inset 0 -2px 0 var(--led)}
+.seg.v{flex-direction:column}
+.seg.g2{display:grid;grid-template-columns:1fr 1fr}
+.tog{all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600;font-size:10px;letter-spacing:.1em;color:var(--ink-2);text-transform:uppercase}
+.tog::before{content:"";width:8px;height:8px;border-radius:50%;background:#3a2a1f}
+.tog.on::before{background:var(--led);box-shadow:0 0 6px var(--led)}
+.sel{appearance:none;-webkit-appearance:none;background:var(--well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0h8L4 5z' fill='%235e6a76'/%3E%3C/svg%3E") no-repeat right 6px center;
+  border:1px solid #000;border-radius:2px;color:var(--ink);font-family:var(--f-ui);font-size:11.5px;font-weight:500;padding:3px 18px 3px 7px;cursor:pointer;min-width:0}
+.sel:focus-visible{outline:1px solid var(--peak)}
+.sel option{background:#14181c}
+.lbl{font-size:9.5px;font-weight:600;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase}
+.well{background:var(--well);border:1px solid #000;border-radius:2px;position:relative;overflow:hidden}
+.well svg{display:block;width:100%;height:100%}
+.gl{stroke:#151a20;stroke-width:1}
+.cl{stroke:#1f262e;stroke-width:1}
+.wf{fill:var(--peak-dim)}
+.ws{fill:none;stroke:var(--peak);stroke-width:1.6;stroke-linejoin:round}
+.nd{fill:var(--well);stroke:var(--peak);stroke-width:1.5}
+
+/* oscillators */
+.osc{height:136px;display:grid;grid-template-columns:24px 74px 104px 1fr 112px 104px 156px;gap:10px;align-items:center;padding:0 10px 0 0}
+.vlabel{height:100%;writing-mode:vertical-rl;transform:rotate(180deg);display:grid;place-items:center;font-weight:700;letter-spacing:.2em;font-size:11px;background:var(--panel-hi);border-right:1px solid #000}
+.osc .col{display:flex;flex-direction:column;gap:6px;align-items:center}
+.osc .row{display:flex;gap:2px;justify-content:center}
+.wave{display:flex;flex-direction:column;gap:4px;height:112px}
+.wsel{display:flex;height:22px}
+.wsel .arr{width:20px;font-size:12px}
+.wname{flex:1;background:var(--well);border-block:1px solid #000;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:11.5px;letter-spacing:.05em}
+.wname small{color:var(--ink-3);font-weight:500;font-size:9.5px;letter-spacing:.1em}
+.wave .well{flex:1}
+.grp{position:relative;padding-top:2px}
+.grp::after{content:"";position:absolute;left:10px;right:10px;bottom:-6px;height:5px;border:1px solid var(--edge-hi);border-top:0}
+
+/* lower: mixer + filter */
+.lower{flex:1;display:grid;grid-template-columns:196px 1fr;gap:8px;min-height:0}
+.mixer .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 4px;padding:14px 8px 8px;justify-items:center}
+.mixer .div{grid-column:1/-1;height:1px;background:var(--edge);width:100%}
+.filter .in{display:grid;grid-template-columns:230px 1fr;gap:14px;padding:6px 12px 10px 10px;height:calc(100% - 20px)}
+.filter .left{display:flex;flex-direction:column;gap:6px}
+.filter .left .well{flex:1}
+.filter .segs{display:flex;gap:6px}
+.filter .segs .seg:first-child{flex:3}.filter .segs .seg:last-child{flex:2}
+.filter .k{width:66px}.filter .k.big{width:86px}
+.filter .envsrc{display:flex;align-items:center;gap:8px}.filter .envsrc .seg{flex:1}
+.filter .knobs{display:grid;grid-template-columns:86px repeat(4,66px);justify-content:end;grid-template-rows:auto auto;gap:6px 0;align-items:start;justify-items:center;padding-top:6px}
+.filter .knobs .big{grid-row:1/3;align-self:center}
+.envsrc{grid-column:2/4;display:flex;align-items:center;gap:8px;width:100%;padding:0 8px}
+.envsrc .seg{flex:1}
+
+/* right column */
+.right{display:flex;flex-direction:column;gap:8px;min-width:0}
+.mods{display:grid;grid-template-columns:72px 1fr;flex:none}
+.vt{display:flex;flex-direction:column;background:var(--panel-hi);border-right:1px solid #000}
+.vt button{all:unset;cursor:pointer;padding:9px 8px;font-weight:700;font-size:10.5px;letter-spacing:.1em;color:var(--ink-3);border-bottom:1px solid #000;display:flex;align-items:center;justify-content:space-between;gap:4px}
+.vt button:hover{color:var(--ink)}
+.vt button.on{color:var(--ink);background:var(--panel);box-shadow:inset 2px 0 0 var(--peak)}
+.vt button .grab{color:var(--ink-3);font-size:11px;cursor:grab;padding:0 2px}
+.vt button .grab:hover{color:var(--led)}
+.vt .extra{margin-top:auto;padding:8px 6px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.mods .main{display:flex;flex-direction:column;padding:8px 10px 6px;gap:6px;min-width:0}
+.mods .bar{display:flex;gap:6px;align-items:center}
+.mods .bar .seg{flex:1}
+.mods .krow{display:flex;justify-content:space-between}
+.env{height:262px}.env .well{height:142px}
+.lfo{height:266px}.lfo .well{height:112px}
+.note{font-size:9.5px;color:var(--ink-3);letter-spacing:.04em}
+.va-panel{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
+.va-panel .panel{display:flex;flex-direction:column}
+.va-panel .in{flex:1;display:flex;flex-direction:column;gap:6px;padding:6px 8px 6px}
+.va-panel .r{display:flex;gap:6px;align-items:center;justify-content:space-between}
+.va-panel .sel{flex:1}
+.va-panel .krow{display:flex;justify-content:space-between;margin-top:auto}
+
+/* FX view */
+.fxtop{display:flex;align-items:center;gap:18px;padding:10px 14px;height:76px}
+.route{display:flex;align-items:center;gap:8px}
+.route svg{width:190px;height:48px}
+.route .blk{fill:var(--panel-hi);stroke:var(--peak);stroke-width:1}
+.route text{fill:var(--ink);font-family:var(--f-ui);font-size:10px;font-weight:600;letter-spacing:.06em}
+.route .w{fill:none;stroke:var(--ink-3);stroke-width:1.2}
+.rack{display:flex;flex-direction:column;gap:8px;flex:1}
+.fxrow{display:grid;grid-template-columns:118px 120px 1fr;gap:12px;align-items:center;padding-right:12px;background:var(--panel);border-top:2px solid var(--peak)}
+.fxtab{height:100%;background:var(--panel-hi);border-right:1px solid #000;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 12px}
+.fxtab b{font-weight:700;letter-spacing:.14em;font-size:12px}
+.fxrow .well{height:76px}
+.fxrow .ks{display:flex;align-items:center;gap:2px;flex-wrap:nowrap}
+.fxrow .opts{display:flex;flex-direction:column;gap:6px;margin-right:6px;width:118px;flex:none}
+.fxrow .opts .seg button{padding:3px 2px}
+.fxrow.dist{height:96px}.fxrow.cho{height:120px}.fxrow.del{height:130px}.fxrow.rev{height:130px}
+
+/* Matrix view */
+.mx{display:flex;flex-direction:column}
+.mxh,.mxr{display:grid;grid-template-columns:30px 150px 18px 150px 1fr 186px 26px;gap:6px;align-items:center;padding:0 10px}
+.mxh{height:26px;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase;border-bottom:1px solid #000}
+.mxr{height:28px;border-bottom:1px solid #0d1013}
+.mxr:nth-child(even){background:rgba(255,255,255,.012)}
+.mxr .n{font-family:var(--f-mono);font-size:10px;color:var(--ink-3);text-align:right}
+.mxr .x{color:var(--ink-3);text-align:center;font-size:11px}
+.mxr.empty .sel{color:var(--ink-3)}
+.mxr.empty .n{opacity:.5}
+.mxr:not(.empty) .n{color:var(--peak)}
+.amt{height:14px;background:var(--well);border:1px solid #000;position:relative;cursor:ew-resize;border-radius:2px}
+.amt::before{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--edge-hi)}
+.amt i{position:absolute;top:2px;bottom:2px;background:var(--peak);border-radius:1px}
+.amt span{position:absolute;right:-1px;top:-1px;transform:translateX(100%);padding-left:6px;font-family:var(--f-mono);font-size:10px;color:var(--ink-2);width:30px}
+.mxr .clr{all:unset;cursor:pointer;color:var(--ink-3);text-align:center;font-size:11px}
+.mxr .clr:hover{color:var(--led)}
+.mxr .amtw{padding-right:34px}
+.mxsec{display:flex;align-items:center;justify-content:space-between;padding:0 10px;height:22px}
+.legend{font-size:10px;color:var(--ink-3);letter-spacing:.04em}
+
+#toast{position:fixed;left:50%;bottom:max(20px,env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;transition:.25s;background:#1b2026;border:1px solid var(--edge-hi);border-left:3px solid var(--led);
+  color:var(--ink);font:500 13px var(--f-body);padding:9px 14px;border-radius:3px;pointer-events:none;max-width:calc(100vw - 32px);z-index:20}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+
+<div class="page">
+  <header class="intro">
+    <h1>Peak <span>Control</span></h1>
+    <p>UI preview: Serum / Vital layout in Novation Peak colours. Knobs drag (double-click resets), tabs switch, sources drag onto knobs. Nothing is sent to a synth.</p>
+  </header>
+
+  <div class="fit" id="fit"><div class="stage" id="stage">
+    <div class="top">
+      <div class="brand">
+        <svg viewBox="0 0 26 26" aria-hidden="true"><path d="M2 21 L9 8 L13 14 L17 5 L24 21" fill="none" stroke="#35b6e8" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="17" cy="5" r="2" fill="#ff7a1a"/></svg>
+        PEAK<span>CTRL</span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="on" data-view="main"><i></i>MAIN</button>
+        <button data-view="fx"><i></i>FX</button>
+        <button data-view="matrix"><i></i>MATRIX</button>
+      </nav>
+      <div class="preset">
+        <button class="arr" data-toast="Previous patch">‹</button>
+        <div class="oled"><small>EDIT BUFFER · CATEGORY 6 · GENRE 0</small><b>Perc Up GEO<em>*</em></b></div>
+        <button class="arr" data-toast="Next patch">›</button>
+      </div>
+      <div class="actions">
+        <button class="btn" data-toast="Fetch: read the Peak's edit buffer (not connected in this preview)">Fetch</button>
+        <button class="btn" data-toast="Send: write this patch to the edit buffer (not connected in this preview)">Send</button>
+        <button class="btn" data-toast="Save: pick a slot, back it up, then write (not connected in this preview)">Save</button>
+      </div>
+      <div class="midi"><i class="led c on"></i>PEAK · CH 1 · FW 2.1</div>
+      <div id="master"></div>
+    </div>
+
+    <div class="body" id="body">
+      <aside class="rail" id="rail"></aside>
+
+      <main class="center">
+        <!-- MAIN -->
+        <section class="view on" id="v-main">
+          <div id="oscs" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div class="lower">
+            <div class="panel mixer">
+              <div class="ph">Mixer <button class="more" data-toast="Mixer menu: Patch Level, FX Dry / Wet">▶</button></div>
+              <div class="grid" id="mixer"></div>
+            </div>
+            <div class="panel filter">
+              <div class="ph">Filter <button class="more" data-toast="Filter menu: Divergence">▶</button></div>
+              <div class="in">
+                <div class="left">
+                  <div class="segs">
+                    <div class="seg" data-on="flt.shape"><button class="on">LP</button><button>BP</button><button>HP</button></div>
+                    <div class="seg" data-on="flt.slope"><button>12 dB</button><button class="on">24 dB</button></div>
+                  </div>
+                  <div class="well"><svg id="fcurve" viewBox="0 0 286 170" preserveAspectRatio="none"></svg></div>
+                  <div class="envsrc"><span class="cap">Env Src</span><div class="seg"><button>Amp Env</button><button class="on">Mod Env 1</button></div></div>
+                </div>
+                <div class="knobs" id="fknobs"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- FX -->
+        <section class="view" id="v-fx">
+          <div class="panel fxtop">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <span class="lbl">Effects</span>
+              <button class="btn" id="bypass">Bypass</button>
+            </div>
+            <div class="route">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <span class="lbl">Routing</span>
+                <div class="wsel" style="width:150px"><button class="arr" id="rprev">‹</button><span class="wname" id="rname">Parallel</span><button class="arr" id="rnext">›</button></div>
+              </div>
+              <svg id="rsvg" viewBox="0 0 190 48"></svg>
+            </div>
+            <div style="margin-left:auto;display:flex" id="drywet"></div>
+          </div>
+          <div class="rack" id="rack"></div>
+        </section>
+
+        <!-- MATRIX -->
+        <section class="view" id="v-matrix">
+          <div class="panel mx" style="flex:none">
+            <div class="ph">Mod Matrix <span class="legend">16 slots · Source A × Source B × Amount → Destination</span></div>
+            <div class="mxh"><span>#</span><span>Source A</span><span></span><span>Source B</span><span>Amount</span><span>Destination</span><span></span></div>
+            <div id="mxrows"></div>
+          </div>
+          <div class="panel mx" style="flex:1">
+            <div class="ph">FX Mod Matrix <span class="legend">4 slots · per-patch, LFO 1/2 and envelopes can't reach effects</span></div>
+            <div class="mxh"><span>#</span><span>Source A</span><span></span><span>Source B</span><span>Amount</span><span>Destination</span><span></span></div>
+            <div id="fxrows"></div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="right">
+        <div class="panel mods env">
+          <div class="vt" id="envtabs">
+            <button class="on" data-env="amp">AMP <span class="grab" draggable="true" data-src="11" title="Drag Amp Env onto a knob">✥</span></button>
+            <button data-env="mod1">MOD 1 <span class="grab" draggable="true" data-src="12" title="Drag Mod Env 1 onto a knob">✥</span></button>
+            <button data-env="mod2">MOD 2 <span class="grab" draggable="true" data-src="13" title="Drag Mod Env 2 onto a knob">✥</span></button>
+            <div class="extra" id="envextra"></div>
+          </div>
+          <div class="main">
+            <div class="bar"><span class="lbl" id="envtitle" style="flex:1">Amp Envelope</span><span class="note">Delay · Attack · Hold · Decay · Sustain · Release</span></div>
+            <div class="well"><svg id="egraph" viewBox="0 0 352 142" preserveAspectRatio="none"></svg></div>
+            <div class="krow" id="envknobs"></div>
+          </div>
+        </div>
+
+        <div class="panel mods lfo">
+          <div class="vt" id="lfotabs">
+            <button class="on" data-lfo="0">LFO 1 <span class="grab" draggable="true" data-src="8" title="Drag LFO 1 onto a knob">✥</span></button>
+            <button data-lfo="1">LFO 2 <span class="grab" draggable="true" data-src="10" title="Drag LFO 2 onto a knob">✥</span></button>
+            <button data-lfo="2">LFO 3 <span class="grab" draggable="true" data-src="18" title="Drag LFO 3 onto a knob">✥</span></button>
+            <button data-lfo="3">LFO 4 <span class="grab" draggable="true" data-src="20" title="Drag LFO 4 onto a knob">✥</span></button>
+            <div class="extra"><button class="tog" data-toggle>One Shot</button><button class="tog" data-toggle>Common</button></div>
+          </div>
+          <div class="main">
+            <div class="bar">
+              <div class="seg" id="lfowave"><button>Tri</button><button>Saw</button><button>Sqr</button><button>S&amp;H</button></div>
+              <div class="seg" id="lforange"><button>Low</button><button>High</button><button>Sync</button></div>
+            </div>
+            <div class="well"><svg id="lgraph" viewBox="0 0 352 112" preserveAspectRatio="none"></svg></div>
+            <div class="krow" id="lfoknobs"></div>
+          </div>
+        </div>
+
+        <div class="va-panel">
+          <div class="panel">
+            <div class="ph">Voice <button class="more" data-toast="Voice menu: Spread Mode, Pan, Pre-Glide, Keyboard Octave">▶</button></div>
+            <div class="in">
+              <div class="r"><span class="lbl">Mode</span><select class="sel" id="vmode" aria-label="Voice mode"><option>Mono</option><option>Mono LG</option><option>Mono 2</option><option selected>Poly 1</option><option>Poly 2</option></select></div>
+              <div class="r"><span class="lbl">Glide</span><button class="tog" data-toggle>On</button></div>
+              <div class="krow" id="voiceknobs"></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ph">Arp <button class="more" data-toast="Arp menu: Rhythm, Swing, Chance, Key Sync">▶</button></div>
+            <div class="in">
+              <div class="r"><button class="tog" data-toggle>On</button><button class="tog" data-toggle>Latch</button><button class="tog" data-toggle>Key Sync</button></div>
+              <div class="r"><select class="sel" aria-label="Arp type"><option>Up</option><option>Down</option><option>Up/Down</option><option>Up/Down 2</option><option>Played</option><option>Random</option><option>Chord</option><option>Chord 2</option></select>
+                <select class="sel" aria-label="Arp rate" id="arprate"></select></div>
+              <div class="krow" id="arpknobs"></div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div></div>
+
+  <p class="foot"><b>Example values.</b> The patch name and the mod-matrix slots are decoded from the dump of “Perc Up GEO” (offsets 250–329, not yet verified on the synth). Other values are placeholders. Orange rings on knobs show modulation from the matrix. Menu-only settings sit behind each panel’s ▶.</p>
+</div>
+<div id="toast" role="status"></div>
+
+<script>
+/* ---------------- data ---------------- */
+const SRC=["Direct","Mod Wheel","Aftertouch","Expression","Breath","Velocity","Keyboard","LFO 1 +","LFO 1 ±","LFO 2 +","LFO 2 ±","Amp Env","Mod Env 1","Mod Env 2","Animate 1","Animate 2","CV ±","LFO 3 +","LFO 3 ±","LFO 4 +","LFO 4 ±","Bend +","Bend −","Noise"];
+const DEST=["Osc 1·2·3 Pitch","Osc 1 Pitch","Osc 2 Pitch","Osc 3 Pitch","Osc 1 V-Sync","Osc 2 V-Sync","Osc 3 V-Sync","Osc 1 Shape","Osc 2 Shape","Osc 3 Shape","Osc 1 Level","Osc 2 Level","Osc 3 Level","Noise Level","Ring Level","VCA Level","Filter Drive","Filter Post Drive","Filter Frequency","Filter Resonance","LFO 1 Rate","LFO 2 Rate","Amp Env Attack","Amp Env Decay","Amp Env Release","Mod Env 1 Attack","Mod Env 1 Decay","Mod Env 1 Release","Mod Env 2 Attack","Mod Env 2 Decay","Mod Env 2 Release","FM Osc 1→2","FM Osc 2→3","FM Osc 3→1","FM Noise→1","Osc 3 → Filter","Noise → Filter","Pan","Osc 1·2·3 Shape","Amp Env Delay","Amp Env Hold","Amp Env Sustain","Mod Env 1 Delay","Mod Env 1 Hold","Mod Env 1 Sustain","Mod Env 2 Delay","Mod Env 2 Hold","Mod Env 2 Sustain"];
+const FXSRC=["Direct","Mod Wheel","Aftertouch","Expression","Breath","Velocity","Keyboard","Animate 1","Animate 2","CV ±","LFO 3 +","LFO 3 ±","LFO 4 +","LFO 4 ±","Bend +","Bend −","Noise"];
+const FXDEST=["Distortion Level","Chorus Level","Chorus Rate","Chorus Depth","Chorus Feedback","Delay Level","Delay Time","Delay Feedback","Reverb Level","Reverb Time","Reverb LPF","Reverb HPF","Reverb Size","Reverb Low Pass","Reverb High Pass","Reverb LP Damp","Reverb HP Damp","Delay Slew","Delay LP Damp","Delay HP Damp","Delay Width","Delay Ratio","LFO 3 Rate","LFO 4 Rate","Noise LPF","Noise HPF"];
+const MAIN2FX={0:0,1:1,2:2,3:3,4:4,5:5,6:6,14:7,15:8,16:9,17:10,18:11,19:12,20:13,21:14,22:15,23:16};
+const WT=["BS Sine","String","Glassy","Spirals","Random","BassOrgn","Granular","Steel","Zing","Acid","Grime","Sunrise","Tubey","Buzzy","Drow","Swell","Octaves","Carousel","Heavy","Thicker","Wobbler","Choral","Hedge","Thinner","Chords","Climbing","Hungry","Tides","Didgery","CoinFlip","Ladders","Tokyo","Harsh","Deep","Lead","Tops","Organ","Dub","Modeling","V.Chord","E. Piano","Eee","Modem","Variance","VoxOooEe","Eris","Monster","Vocaloid","VoxYahEe","Flame","Screech","Vowelled","Winds","Further","SeaBase","WeirdVox","SoftClav","GlassSaw","Shmorgan","Yeah"];
+const WAVES=["Sine","Triangle","Saw","Pulse",...WT];
+const ARPSYNC=["8 beats","6 beats","5⅓","4 beats","3 beats","2⅔","2nd","4th D","1⅓","4th","8th D","4th T","8th","16th D","8th T","16th","16th T","32nd","32nd T"];
+const LFOSYNC=["64","48","42","36","32","30","28","24 bt","21⅓","20 bt","18⅔","18","16 bt","13⅓","12 bt","10⅔","8","6 bt","5⅓","4","3 bt","2⅔","2nd","4th D","1⅓","4th","8th D","4th T","8th","16th D","8th T","16th","16th T","32nd","32nd T"];
+const DELSYNC=ARPSYNC.slice(3);
+const ROUTES=[["Parallel","par"],["Series 1",["DIS","CHO","DEL","REV"]],["Series 2",["DIS","DEL","CHO","REV"]],["Series 3",["DIS","REV","CHO","DEL"]],["Series 4",["CHO","DIS","DEL","REV"]],["Series 5",["DEL","DIS","CHO","REV"]],["Series 6",["REV","DIS","CHO","DEL"]]];
+
+// Mod matrix decoded from the "Perc Up GEO" dump (offset 250, 4 bytes per slot; depth 64 = 0)
+const raw=[[0,0,113,33],[1,0,70,18],[15,0,76,4],[10,2,105,38]];
+const rows=Array.from({length:16},(_,i)=>{const r=raw[i]||[0,0,64,0];return{a:r[0],b:r[1],amt:r[2]-64,d:r[3]}});
+const fxraw=[[1,0,95,3],[1,0,73,2],[7,0,74,5]];
+const fxrows=Array.from({length:4},(_,i)=>{const r=fxraw[i]||[0,0,64,0];return{a:r[0],b:r[1],amt:r[2]-64,d:r[3]}});
+
+const osc=[
+  {n:1,range:1,wave:2,shape:64,src:0},
+  {n:2,range:0,wave:16,shape:88,src:1},
+  {n:3,range:0,wave:3,shape:96,src:2}
+];
+const envs={
+  amp:{del:0,att:0,hold:0,dec:62,sus:0,rel:38,vel:40},
+  mod1:{del:0,att:4,hold:12,dec:75,sus:35,rel:45,vel:64},
+  mod2:{del:20,att:30,hold:0,dec:55,sus:80,rel:60,vel:64}
+};
+const ENVNAME={amp:"Amp Envelope",mod1:"Mod Envelope 1",mod2:"Mod Envelope 2"};
+const ENVDEST={amp:[39,22,40,23,41,24],mod1:[42,25,43,26,44,27],mod2:[45,28,46,29,47,30]};
+const lfos=[
+  {wave:0,range:0,rate:150,fade:0,phase:0,slew:0},
+  {wave:3,range:2,rate:31,fade:40,phase:0,slew:60},
+  {wave:1,range:1,rate:90,fade:0,phase:30,slew:0},
+  {wave:2,range:0,rate:60,fade:70,phase:0,slew:30}
+];
+const flt={shape:0,slope:1,freq:150,res:62};
+let curEnv="amp",curLfo=0,route=0;
+
+/* ---------------- helpers ---------------- */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function pt(cx,cy,r,a){const t=(a-90)*Math.PI/180;return[cx+r*Math.cos(t),cy+r*Math.sin(t)]}
+function arc(cx,cy,r,a0,a1){if(a1<a0)[a0,a1]=[a1,a0];if(a1-a0<.6)return"";const p=pt(cx,cy,r,a0),q=pt(cx,cy,r,a1);return`M${p[0].toFixed(2)} ${p[1].toFixed(2)}A${r} ${r} 0 ${a1-a0>180?1:0} 1 ${q[0].toFixed(2)} ${q[1].toFixed(2)}`}
+const FMT={
+  pm:(v,el)=>{const c=Math.round((+el.dataset.min+ +el.dataset.max)/2),d=v-c;return(d>0?"+":"")+d},
+  arp:v=>ARPSYNC[v], del:v=>DELSYNC[v]||v, lsync:v=>LFOSYNC[v]||v,
+  range:v=>["16'","8'","4'","2'"][v], swing:v=>v+"%", pct:v=>v+"%",
+  oct:v=>v, uni:v=>v===0?"Off":v+1+"v"
+};
+let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2600)}
+
+/* knob: o = {l,v,min,max,bi,fmt,dest,fx,bind,cls,def} */
+function K(o){
+  const a=[`class="k${o.cls?" "+o.cls:""}"`,`data-v="${o.v}"`,`data-min="${o.min??0}"`,`data-max="${o.max??127}"`,`data-def="${o.def??o.v}"`];
+  if(o.bi)a.push('data-bi="1"');if(o.fmt)a.push(`data-fmt="${o.fmt}"`);
+  if(o.dest!=null)a.push(`data-dest="${o.dest}"`);if(o.fx!=null)a.push(`data-fx="${o.fx}"`);
+  if(o.bind)a.push(`data-bind="${o.bind}"`);if(o.t)a.push(`title="${o.t}"`);
+  return`<div ${a.join(" ")} tabindex="0" role="slider" aria-label="${o.l}"><svg viewBox="0 0 48 48"></svg><output></output><span class="kl">${o.l}</span></div>`;
+}
+function modFor(el){
+  let s=0;
+  if(el.dataset.dest){const ds=el.dataset.dest.split(",").map(Number);rows.forEach(r=>{if(r.amt&&ds.includes(r.d))s+=r.amt})}
+  if(el.dataset.fx){const ds=el.dataset.fx.split(",").map(Number);fxrows.forEach(r=>{if(r.amt&&ds.includes(r.d))s+=r.amt})}
+  return s;
+}
+function rk(el){
+  const min=+el.dataset.min,max=+el.dataset.max,v=+el.dataset.v,bi=el.dataset.bi;
+  const a=-135+(v-min)/(max-min)*270,c0=bi?0:-135,m=modFor(el);
+  let ring="";if(m){ring=`<path class="mr" d="${arc(24,24,22.5,a,clamp(a+m/64*135,-135,135))}"/>`}
+  el.classList.toggle("hasmod",!!m);
+  const p=pt(24,24,11.5,a),q=pt(24,24,4,a);
+  el.querySelector("svg").innerHTML=`<path class="tr" d="${arc(24,24,18,-135,135)}"/><path class="va" d="${arc(24,24,18,c0,a)}"/>${ring}<circle class="bd" cx="24" cy="24" r="13.5"/><line class="pt" x1="${q[0]}" y1="${q[1]}" x2="${p[0]}" y2="${p[1]}"/>`;
+  const f=el.dataset.fmt;el.querySelector("output").textContent=f&&FMT[f]?FMT[f](v,el):v;
+  el.setAttribute("aria-valuenow",v);
+}
+const renderKnobs=()=>$$(".k").forEach(rk);
+
+function setKnob(el,v){
+  v=clamp(Math.round(v),+el.dataset.min,+el.dataset.max);
+  if(v==el.dataset.v)return;el.dataset.v=v;rk(el);onKnob(el,v);
+}
+function onKnob(el,v){
+  const b=el.dataset.bind;if(!b)return;const[g,k]=b.split(".");
+  if(g==="env"){envs[curEnv][k]=v;drawEnv()}
+  else if(g==="lfo"){lfos[curLfo][k]=v;drawLfo()}
+  else if(g==="flt"){flt[k]=v;drawFilter()}
+  else if(g.startsWith("osc")){const o=osc[+g[3]-1];o[k]=v;drawWave(o)}
+  else if(g==="fx")drawFx();
+}
+
+/* ---------------- build: rail ---------------- */
+$("#rail").innerHTML=`<div class="ttl">SOURCES</div>`+
+  [[14,"Animate 1","pad","1"],[15,"Animate 2","pad","2"],[1,"Mod Wheel",62],[2,"After­touch",20],[5,"Velocity",74],[3,"Expression",0],[6,"Keyboard",50]]
+  .map(([s,l,x,p])=>`<div class="src" draggable="true" data-src="${s}" title="Drag ${l} onto a knob to add a mod slot">${x==="pad"?`<div class="pad${p==="2"?" lit":""}">${p}</div>`:`<div class="meter"><i style="width:${x}%"></i></div>`}${l}</div>`).join("")+
+  `<div class="drag-hint">Drag a source onto a knob.<br><b>Orange ring</b> = modulated.</div>`;
+
+/* ---------------- build: oscillators ---------------- */
+$("#oscs").innerHTML=osc.map((o,i)=>{const n=o.n,fm=[[33,"FM 3→1"],[31,"FM 1→2"],[32,"FM 2→3"]][i];return`
+<div class="panel osc" data-osc="${n}">
+  <div class="vlabel">OSC ${n}</div>
+  <div class="col"><span class="cap">Range</span><div class="seg g2" data-on="osc${n}.range">${["16'","8'","4'","2'"].map((r,j)=>`<button${j===o.range?' class="on"':""}>${r}</button>`).join("")}</div></div>
+  <div class="row">${K({l:"Coarse",v:128,max:255,bi:1,fmt:"pm",dest:n})}${K({l:"Fine",v:128,min:28,max:228,bi:1,fmt:"pm"})}</div>
+  <div class="wave"><div class="wsel"><button class="arr" data-wave="${n}" data-dir="-1" aria-label="Previous wave">‹</button><span class="wname" id="wn${n}"></span><button class="arr" data-wave="${n}" data-dir="1" aria-label="Next wave">›</button></div>
+    <div class="well"><svg id="wd${n}" viewBox="0 0 220 84" preserveAspectRatio="none"></svg></div></div>
+  <div class="row" style="align-items:center;gap:6px">${K({l:"Shape",v:o.shape,bi:1,fmt:"pm",dest:`${6+n},38`,bind:`osc${n}.shape`})}
+    <div class="seg v" data-on="osc${n}.src">${["Manual","Env 1","LFO 1"].map((s,j)=>`<button${j===o.src?' class="on"':""}>${s}</button>`).join("")}</div></div>
+  <div class="col"><div class="row grp">${K({l:"Env 2",v:64,min:1,bi:1,fmt:"pm"})}${K({l:"LFO 2",v:128,min:1,max:255,bi:1,fmt:"pm"})}</div><span class="cap" style="margin-top:4px">Pitch Mod</span></div>
+  <div class="row">${K({l:"V-Sync",v:n===3?40:0,dest:3+n})}${K({l:"Saw Dens",v:0,t:"Saw Density: stacks detuned copies of the saw (supersaw). Fine-tune spread with Density Detune in the ▶ menu."})}${K({l:fm[1],v:0,dest:fm[0]})}</div>
+</div>`}).join("");
+
+/* mixer + filter */
+$("#mixer").innerHTML=
+  K({l:"Osc 1",v:255,max:255,dest:10})+K({l:"Osc 2",v:180,max:255,dest:11})+K({l:"Osc 3",v:96,max:255,dest:12})+
+  `<div class="div"></div>`+K({l:"Ring 1×2",v:0,max:255,dest:14})+K({l:"Noise",v:20,max:255,dest:13})+K({l:"VCA Gain",v:127,dest:15});
+$("#fknobs").innerHTML=
+  K({l:"Frequency",v:flt.freq,max:255,dest:18,bind:"flt.freq",cls:"big"})+
+  K({l:"Resonance",v:flt.res,dest:19,bind:"flt.res"})+K({l:"Overdrive",v:20,dest:16})+K({l:"Post Drive",v:0,dest:17})+K({l:"Key Track",v:127})+
+  K({l:"Env Depth",v:94,min:1,bi:1,fmt:"pm"})+K({l:"LFO 1",v:128,min:1,max:255,bi:1,fmt:"pm"})+
+  K({l:"Osc 3 Mod",v:0,dest:35})+K({l:"Diverge",v:0,t:"Filter Divergence: per-voice cutoff variation (menu-only on the Peak)"});
+
+/* master */
+$("#master").innerHTML=K({l:"Master",v:100,cls:"sm"});
+
+/* ---------------- right column ---------------- */
+function buildEnv(){
+  const e=envs[curEnv],d=ENVDEST[curEnv];
+  $("#envtitle").textContent=ENVNAME[curEnv];
+  $("#envknobs").innerHTML=[["Delay","del"],["Attack","att"],["Hold","hold"],["Decay","dec"],["Sustain","sus"],["Release","rel"]]
+    .map(([l,k],i)=>K({l,v:e[k],dest:d[i],bind:"env."+k})).join("");
+  $("#envextra").innerHTML=K({l:"Velocity",v:e.vel,bi:1,fmt:"pm",cls:"sm"})+`<button class="tog on" data-toggle>Re-Trig</button>`;
+  $$("#envknobs .k,#envextra .k").forEach(rk);drawEnv();
+}
+function buildLfo(){
+  const l=lfos[curLfo],glob=curLfo>1;
+  $$("#lfowave button").forEach((b,i)=>b.classList.toggle("on",i===l.wave));
+  $$("#lforange button").forEach((b,i)=>b.classList.toggle("on",i===l.range));
+  const rate=l.range===2?K({l:"Sync",v:l.rate%35,max:34,fmt:"lsync",bind:"lfo.rate"}):K({l:"Rate",v:l.rate,max:255,dest:curLfo<2?20+curLfo:null,fx:glob?22+curLfo-2:null,bind:"lfo.rate"});
+  $("#lfoknobs").innerHTML=rate+K({l:"Fade",v:l.fade,bind:"lfo.fade"})+K({l:"Phase",v:l.phase,max:120,bind:"lfo.phase"})+K({l:"Slew",v:l.slew,bind:"lfo.slew"})+
+    `<div style="display:flex;flex-direction:column;justify-content:center;gap:4px;width:96px"><span class="cap">Fade Mode</span><select class="sel" aria-label="Fade mode"><option>Fade In</option><option>Fade Out</option><option>Gate In</option><option>Gate Out</option></select>${glob?'<span class="note" style="text-align:center">global · not per voice</span>':""}</div>`;
+  $$("#lfoknobs .k").forEach(rk);drawLfo();
+}
+$("#voiceknobs").innerHTML=K({l:"Unison",v:0,max:4,fmt:"uni",cls:"sm"})+K({l:"Detune",v:25,cls:"sm"})+K({l:"Spread",v:2,cls:"sm"})+K({l:"Glide",v:60,cls:"sm"});
+$("#arprate").innerHTML=ARPSYNC.map((s,i)=>`<option${i===15?" selected":""}>${s}</option>`).join("");
+$("#arpknobs").innerHTML=K({l:"Gate",v:64,cls:"sm"})+K({l:"Swing",v:50,min:20,max:80,fmt:"swing",cls:"sm"})+K({l:"Octaves",v:1,max:5,cls:"sm"})+K({l:"Chance",v:100,min:1,max:100,fmt:"pct",cls:"sm"});
+
+/* ---------------- FX view ---------------- */
+$("#drywet").innerHTML=K({l:"FX Dry",v:127})+K({l:"FX Wet",v:127});
+$("#rack").innerHTML=`
+<div class="fxrow dist"><div class="fxtab"><b>DISTORTION</b><i class="led on"></i></div>
+  <div class="well"><svg id="fxd" viewBox="0 0 120 76" preserveAspectRatio="none"></svg></div>
+  <div class="ks">${K({l:"Level",v:48,fx:0,bind:"fx.dist"})}<span class="note" style="margin-left:14px;max-width:300px">Pre-filter drive lives in the Filter panel (Overdrive, Post Drive).</span></div></div>
+<div class="fxrow cho"><div class="fxtab"><b>CHORUS</b><i class="led on"></i></div>
+  <div class="well"><svg id="fxc" viewBox="0 0 120 76" preserveAspectRatio="none"></svg></div>
+  <div class="ks"><div class="opts"><div class="seg"><button class="on">Chorus</button><button>Phlg</button><button>Flng</button></div><div class="seg"><button>1</button><button class="on">2</button><button>3</button></div></div>
+  ${K({l:"Rate",v:20,fx:2})}${K({l:"Depth",v:64,fx:3})}${K({l:"Feedback",v:64,bi:1,fmt:"pm",fx:4})}${K({l:"Low Pass",v:90})}${K({l:"High Pass",v:2})}${K({l:"Level",v:36,fx:1,bind:"fx.c"})}</div></div>
+<div class="fxrow del"><div class="fxtab"><b>DELAY</b><i class="led on"></i></div>
+  <div class="well"><svg id="fxl" viewBox="0 0 120 76" preserveAspectRatio="none"></svg></div>
+  <div class="ks"><div class="opts"><select class="sel" aria-label="Delay style"><option>Original</option><option>CrossFed</option><option>Dual</option></select><select class="sel" aria-label="Delay time mode"><option>Normal</option><option>Double</option><option>Treble</option><option>QuadLoFi</option><option>HexVLoFi</option></select><button class="tog on" data-toggle>Sync</button></div>
+  ${K({l:"Time",v:9,max:15,fmt:"del",fx:6})}${K({l:"Feedback",v:64,fx:7,bind:"fx.l"})}${K({l:"Width",v:127,fx:20})}${K({l:"LP Damp",v:85,fx:18})}${K({l:"HP Damp",v:0,fx:19})}${K({l:"Slew",v:32,fx:17})}${K({l:"Level",v:30,fx:5})}</div></div>
+<div class="fxrow rev"><div class="fxtab"><b>REVERB</b><i class="led on"></i></div>
+  <div class="well"><svg id="fxr" viewBox="0 0 120 76" preserveAspectRatio="none"></svg></div>
+  <div class="ks"><div class="opts" style="width:84px"><span class="cap">Type</span><div class="seg"><button>1</button><button class="on">2</button><button>3</button></div></div>
+  ${K({l:"Time",v:90,fx:9,bind:"fx.r"})}${K({l:"Size",v:64,fx:12})}${K({l:"Pre-Delay",v:40})}${K({l:"Damp LP",v:50,fx:15})}${K({l:"Damp HP",v:1,fx:16})}${K({l:"Low Pass",v:74,fx:13})}${K({l:"High Pass",v:0,fx:14})}${K({l:"Level",v:22,fx:8})}</div></div>`;
+
+/* ---------------- Matrix view ---------------- */
+const opts=(list,sel)=>list.map((s,i)=>`<option value="${i}"${i===sel?" selected":""}>${s}</option>`).join("");
+function rowHtml(r,i,kind){
+  const S=kind==="m"?SRC:FXSRC,D=kind==="m"?DEST:FXDEST,empty=!r.amt;
+  return`<div class="mxr${empty?" empty":""}" data-kind="${kind}" data-i="${i}">
+  <span class="n">${i+1}</span>
+  <select class="sel" data-f="a" aria-label="Slot ${i+1} source A">${opts(S,r.a)}</select><span class="x">×</span>
+  <select class="sel" data-f="b" aria-label="Slot ${i+1} source B">${opts(S,r.b)}</select>
+  <div class="amtw"><div class="amt" role="slider" aria-label="Slot ${i+1} amount"><i></i><span></span></div></div>
+  <select class="sel" data-f="d" aria-label="Slot ${i+1} destination">${opts(D,r.d)}</select>
+  <button class="clr" title="Clear slot" aria-label="Clear slot ${i+1}">✕</button></div>`;
+}
+function drawAmt(row){
+  const r=(row.dataset.kind==="m"?rows:fxrows)[+row.dataset.i],a=r.amt,bar=row.querySelector(".amt i");
+  const w=Math.abs(a)/64*50;bar.style.left=(a<0?50-w:50)+"%";bar.style.width=w+"%";
+  row.querySelector(".amt span").textContent=(a>0?"+":"")+a;row.classList.toggle("empty",!a);
+}
+function renderMatrix(){
+  $("#mxrows").innerHTML=rows.map((r,i)=>rowHtml(r,i,"m")).join("");
+  $("#fxrows").innerHTML=fxrows.map((r,i)=>rowHtml(r,i,"f")).join("");
+  $$(".mxr").forEach(drawAmt);
+}
+
+/* ---------------- drawing ---------------- */
+function grid(w,h,nx,ny){let g="";for(let i=1;i<nx;i++)g+=`<line class="gl" x1="${w*i/nx}" y1="0" x2="${w*i/nx}" y2="${h}"/>`;for(let j=1;j<ny;j++)g+=`<line class="gl" x1="0" y1="${h*j/ny}" x2="${w}" y2="${h*j/ny}"/>`;return g}
+function seeded(n){let s=n*9301+49297;return()=>(s=(s*9301+49297)%233280)/233280}
+function waveFn(o){
+  const s=(o.shape-64)/64,w=o.wave;
+  if(w===0)return t=>Math.sin(2*Math.PI*t+s*1.6*Math.sin(2*Math.PI*t));
+  if(w===1){const p=.5+.42*s;return t=>{t=(t+.25)%1;return t<p?-1+2*t/p:1-2*(t-p)/(1-p)}}
+  if(w===2)return t=>{const x=1-2*t;return Math.sign(x)*Math.pow(Math.abs(x),1+s*.7)};
+  if(w===3){const p=.5+.44*s;return t=>t<p?.85:-.85}
+  const r=seeded(w),h=Array.from({length:9},(_,k)=>[(r()*1.2)/(k+1)**(.6+r()*.6),r()*6.28]);
+  let mx=0;const f=t=>h.reduce((a,[am,ph],k)=>a+am*Math.sin(2*Math.PI*(k+1)*t+ph+s*k*.5),0);
+  for(let i=0;i<200;i++)mx=Math.max(mx,Math.abs(f(i/200)));return t=>f(t)/mx*.9;
+}
+function drawWave(o){
+  const W=220,H=84,f=waveFn(o),n=o.n;let d="";
+  for(let i=0;i<=440;i++){const x=i/2,t=(x/W*2)%1;d+=(i?"L":"M")+x.toFixed(1)+" "+(H/2-f(t)*H*.4).toFixed(1)}
+  $("#wd"+n).innerHTML=grid(W,H,8,4)+`<line class="cl" x1="0" y1="${H/2}" x2="${W}" y2="${H/2}"/><path class="wf" d="${d}L${W} ${H/2}L0 ${H/2}Z"/><path class="ws" d="${d}"/>`;
+  const w=o.wave;$("#wn"+n).innerHTML=w<4?WAVES[w]:`<small>MORE</small>${WAVES[w]}`;
+}
+function drawFilter(){
+  const W=286,H=170,fc=20*Math.pow(1000,flt.freq/255),Q=.6+flt.res/127*9,top=18,bot=-42;let d="";
+  for(let i=0;i<=W;i+=2){
+    const f=20*Math.pow(1000,i/W),x=f/fc,den=Math.sqrt((1-x*x)**2+(x/Q)**2);
+    let m=flt.shape===0?1/den:flt.shape===1?(x/Q)/den:(x*x)/den;if(flt.shape===1)m*=Q*.7;
+    if(flt.slope)m=m*m*(flt.shape===1?1:1);
+    const db=clamp(20*Math.log10(m+1e-9),bot,top);d+=(i?"L":"M")+i+" "+((top-db)/(top-bot)*H).toFixed(1);
+  }
+  const zero=(top/(top-bot))*H;
+  $("#fcurve").innerHTML=grid(W,H,10,6)+`<line class="cl" x1="0" y1="${zero}" x2="${W}" y2="${zero}"/><path class="wf" d="${d}L${W} ${H}L0 ${H}Z"/><path class="ws" d="${d}"/>`+
+    `<circle class="nd" r="4" cx="${(Math.log(fc/20)/Math.log(1000)*W).toFixed(1)}" cy="${(clamp(zero-6-flt.res/127*Q*6,6,H-6)).toFixed(1)}"/>`;
+}
+function drawEnv(){
+  const e=envs[curEnv],W=352,H=142,y0=H-10,y1=12,sl=v=>4+Math.pow(v/127,1.4)*86;
+  let segs=[sl(e.del)-4,sl(e.att),sl(e.hold)-4,sl(e.dec),46,sl(e.rel)];const tot=segs.reduce((a,b)=>a+b,0)+8;const k=Math.min(1,(W-12)/tot);segs=segs.map(s=>s*k);
+  const sy=y0-(y0-y1)*e.sus/127;let x=6;const P=[[x,y0]];
+  x+=segs[0];P.push([x,y0]);x+=segs[1];P.push([x,y1]);x+=segs[2];P.push([x,y1]);const xd=x;x+=segs[3];P.push([x,sy]);const xs=x;x+=segs[4];P.push([x,sy]);const xr=x;x+=segs[5];P.push([x,y0]);
+  const d=`M${P[0]}L${P[1]}L${P[2]}L${P[3]}Q${xd+segs[3]*.15} ${sy} ${P[4]}L${P[5]}Q${xr+segs[5]*.15} ${y0} ${P[6]}`;
+  $("#egraph").innerHTML=grid(W,H,12,4)+`<rect x="${xs}" y="0" width="${segs[4]}" height="${H}" fill="rgba(255,122,26,.05)"/><path class="wf" d="${d}Z"/><path class="ws" d="${d}"/>`+P.slice(1).map(p=>`<circle class="nd" r="3.5" cx="${p[0]}" cy="${p[1]}"/>`).join("")+
+    `<text x="${xs+4}" y="${H-4}" fill="#5e6a76" font-size="9" font-family="Barlow Semi Condensed">SUSTAIN</text>`;
+}
+function drawLfo(){
+  const l=lfos[curLfo],W=352,H=112,mid=H/2,amp=H*.38,cyc=2,r=seeded(curLfo+3),sh=Array.from({length:8},()=>r()*2-1);
+  const ph=l.phase/120;let d="",prev=null;
+  for(let i=0;i<=W;i+=2){
+    const t=(i/W*cyc+ph)%1,c=Math.floor(i/W*cyc*4);let v;
+    if(l.wave===0)v=t<.5?-1+4*t:3-4*t;else if(l.wave===1)v=1-2*t;else if(l.wave===2)v=t<.5?1:-1;else v=sh[c%8];
+    if(prev!==null&&l.slew){const a=1-l.slew/140;v=prev+(v-prev)*a}prev=v;
+    const fade=l.fade?Math.min(1,i/(W*l.fade/127*.9)):1;
+    d+=(i?"L":"M")+i+" "+(mid-v*amp*fade).toFixed(1);
+  }
+  $("#lgraph").innerHTML=grid(W,H,8,4)+`<line class="cl" x1="0" y1="${mid}" x2="${W}" y2="${mid}"/><path class="wf" d="${d}L${W} ${mid}L0 ${mid}Z"/><path class="ws" d="${d}"/>`;
+}
+function drawFx(){
+  const lv=sel=>+(document.querySelector(sel)?.dataset.v||0);
+  const dl=lv('[data-bind="fx.dist"]')/127;let d="";
+  for(let i=0;i<=120;i+=2){const x=i/60-1,y=Math.tanh(x*(1+dl*8))/Math.tanh(1+dl*8);d+=(i?"L":"M")+i+" "+(38-y*30).toFixed(1)}
+  $("#fxd").innerHTML=grid(120,76,4,4)+`<path class="ws" d="${d}"/>`;
+  let c="";for(let i=0;i<=120;i+=2)c+=(i?"L":"M")+i+" "+(38-Math.sin(i/120*Math.PI*4)*18-Math.sin(i/120*Math.PI*9)*6).toFixed(1);
+  $("#fxc").innerHTML=grid(120,76,4,4)+`<path class="ws" d="${c}"/><path class="ws" style="opacity:.45" d="${c.replace(/ (\d+\.\d)/g,(m,y)=>" "+(76-+y).toFixed(1))}"/>`;
+  const fb=lv('[data-bind="fx.l"]')/127;let t="";for(let k=0;k<6;k++){const x=8+k*20,h=60*Math.pow(.25+fb*.7,k);t+=`<rect x="${x}" y="${70-h}" width="6" height="${h}" fill="var(--peak)" opacity="${1-k*.12}"/>`}
+  $("#fxl").innerHTML=grid(120,76,6,4)+t;
+  const rt=lv('[data-bind="fx.r"]')/127;let r="M4 70L10 8";for(let i=10;i<=118;i+=2)r+="L"+i+" "+(70-62*Math.exp(-(i-10)/(10+rt*70))).toFixed(1);
+  $("#fxr").innerHTML=grid(120,76,4,4)+`<path class="wf" d="${r}L118 70Z"/><path class="ws" d="${r}"/>`;
+}
+function drawRoute(){
+  const[nm,ord]=ROUTES[route];$("#rname").textContent=nm;let s="";
+  if(ord==="par"){["DIS","CHO","DEL","REV"].forEach((n,i)=>{const y=2+i*11.5;s+=`<path class="w" d="M4 24H24V${y+5}H40M84 ${y+5}H150V24H186"/><rect class="blk" x="40" y="${y}" width="44" height="10" rx="1"/><text x="62" y="${y+8}" text-anchor="middle">${n}</text>`})}
+  else{s=`<path class="w" d="M2 24H188"/>`;ord.forEach((n,i)=>{const x=8+i*45;s+=`<rect class="blk" x="${x}" y="16" width="38" height="16" rx="1"/><text x="${x+19}" y="28" text-anchor="middle">${n}</text>`})}
+  $("#rsvg").innerHTML=s;
+}
+
+/* ---------------- interaction ---------------- */
+let drag=null;
+document.addEventListener("pointerdown",e=>{
+  const k=e.target.closest(".k");
+  if(k){drag={el:k,y:e.clientY,v:+k.dataset.v};k.classList.add("drag");k.setPointerCapture(e.pointerId);e.preventDefault();return}
+  const a=e.target.closest(".amt");
+  if(a){drag={amt:a};a.setPointerCapture(e.pointerId);setAmt(a,e.clientX);e.preventDefault()}
+});
+document.addEventListener("pointermove",e=>{
+  if(!drag)return;
+  if(drag.el){const el=drag.el,rng=+el.dataset.max-+el.dataset.min,sc=scale();setKnob(el,drag.v+(drag.y-e.clientY)/sc*rng/(e.shiftKey?600:150))}
+  else setAmt(drag.amt,e.clientX);
+});
+document.addEventListener("pointerup",()=>{if(drag?.el)drag.el.classList.remove("drag");drag=null});
+document.addEventListener("dblclick",e=>{const k=e.target.closest(".k");if(k)setKnob(k,+k.dataset.def)});
+document.addEventListener("keydown",e=>{const k=e.target.closest?.(".k");if(!k)return;const st=Math.max(1,Math.round((+k.dataset.max-+k.dataset.min)/64));
+  if(e.key==="ArrowUp"||e.key==="ArrowRight"){setKnob(k,+k.dataset.v+st);e.preventDefault()}if(e.key==="ArrowDown"||e.key==="ArrowLeft"){setKnob(k,+k.dataset.v-st);e.preventDefault()}});
+function setAmt(a,cx){
+  const row=a.closest(".mxr"),r=(row.dataset.kind==="m"?rows:fxrows)[+row.dataset.i],b=a.getBoundingClientRect();
+  r.amt=clamp(Math.round(((cx-b.left)/b.width*2-1)*64),-64,63);drawAmt(row);renderKnobs();
+}
+document.addEventListener("change",e=>{
+  const s=e.target.closest(".mxr .sel");if(!s)return;const row=s.closest(".mxr"),r=(row.dataset.kind==="m"?rows:fxrows)[+row.dataset.i];
+  r[s.dataset.f]=+s.value;renderKnobs();
+});
+document.addEventListener("click",e=>{
+  const t=e.target;
+  const tab=t.closest(".tabs button");
+  if(tab){$$(".tabs button").forEach(b=>b.classList.toggle("on",b===tab));$$(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+tab.dataset.view));
+    try{localStorage.setItem("pc-view",tab.dataset.view)}catch(_){}return}
+  const sb=t.closest(".seg button");
+  if(sb){const seg=sb.parentElement,i=[...seg.children].indexOf(sb);[...seg.children].forEach(b=>b.classList.toggle("on",b===sb));
+    const on=seg.dataset.on;
+    if(on){const[g,k]=on.split(".");if(g==="flt"){flt[k]=i;drawFilter()}else if(g.startsWith("osc")){osc[+g[3]-1][k]=i}}
+    if(seg.id==="lfowave"){lfos[curLfo].wave=i;drawLfo()}
+    if(seg.id==="lforange"){lfos[curLfo].range=i;buildLfo()}
+    return}
+  if(t.closest("[data-toggle]")){t.closest("[data-toggle]").classList.toggle("on");return}
+  const wv=t.closest("[data-wave]");
+  if(wv){const o=osc[+wv.dataset.wave-1];o.wave=(o.wave+ +wv.dataset.dir+WAVES.length)%WAVES.length;drawWave(o);return}
+  const et=t.closest("[data-env]");if(et&&!t.closest(".grab")){curEnv=et.dataset.env;$$("#envtabs [data-env]").forEach(b=>b.classList.toggle("on",b===et));buildEnv();return}
+  const lt=t.closest("[data-lfo]");if(lt&&!t.closest(".grab")){curLfo=+lt.dataset.lfo;$$("#lfotabs [data-lfo]").forEach(b=>b.classList.toggle("on",b===lt));buildLfo();return}
+  const clr=t.closest(".clr");if(clr){const row=clr.closest(".mxr"),arr=row.dataset.kind==="m"?rows:fxrows;arr[+row.dataset.i]={a:0,b:0,amt:0,d:0};renderMatrix();renderKnobs();return}
+  if(t.id==="bypass"){t.classList.toggle("on");$$(".fxtab .led").forEach(l=>l.classList.toggle("on",!t.classList.contains("on")));return}
+  if(t.id==="rprev"||t.id==="rnext"){route=(route+(t.id==="rnext"?1:-1)+ROUTES.length)%ROUTES.length;drawRoute();return}
+  const ts=t.closest("[data-toast]");if(ts)toast(ts.dataset.toast);
+});
+
+/* drag a source onto a knob → fills a free matrix slot */
+document.addEventListener("dragstart",e=>{const s=e.target.closest?.("[data-src]");if(!s)return;e.dataTransfer.setData("text/plain",s.dataset.src);e.dataTransfer.effectAllowed="copy";document.body.classList.add("dragging")});
+document.addEventListener("dragend",()=>{document.body.classList.remove("dragging");$$(".k.over").forEach(k=>k.classList.remove("over"))});
+document.addEventListener("dragover",e=>{const k=e.target.closest?.(".k");if(k&&(k.dataset.dest||k.dataset.fx)){e.preventDefault();$$(".k.over").forEach(x=>x!==k&&x.classList.remove("over"));k.classList.add("over")}});
+document.addEventListener("dragleave",e=>{const k=e.target.closest?.(".k");if(k&&!k.contains(e.relatedTarget))k.classList.remove("over")});
+document.addEventListener("drop",e=>{
+  const k=e.target.closest?.(".k");if(!k)return;e.preventDefault();k.classList.remove("over");
+  const src=+e.dataTransfer.getData("text/plain"),free=r=>!r.amt&&!r.a&&!r.b;
+  if(k.dataset.dest){const d=+k.dataset.dest.split(",")[0],i=rows.findIndex(free);
+    if(i<0)return toast("All 16 mod slots are in use. Clear one on the Matrix tab.");
+    rows[i]={a:src,b:0,amt:24,d};toast(`Slot ${i+1}: ${SRC[src]} → ${DEST[d]}, +24`)}
+  else{const fs=MAIN2FX[src];if(fs===undefined)return toast(`${SRC[src]} can't modulate effects on the Peak. Use LFO 3/4 or a performance source.`);
+    const d=+k.dataset.fx.split(",")[0],i=fxrows.findIndex(free);if(i<0)return toast("All 4 FX mod slots are in use.");
+    fxrows[i]={a:fs,b:0,amt:24,d};toast(`FX slot ${i+1}: ${FXSRC[fs]} → ${FXDEST[d]}, +24`)}
+  renderMatrix();renderKnobs();
+});
+
+/* scale the fixed stage to the page width */
+function scale(){return +($("#stage").dataset.s||1)}
+function fit(){const w=$("#fit").clientWidth,s=Math.min(1,w/1360);const st=$("#stage");st.style.transform=`scale(${s})`;st.dataset.s=s;$("#fit").style.height=800*s+"px"}
+window.addEventListener("resize",fit);
+
+/* ---------------- init ---------------- */
+osc.forEach(drawWave);renderMatrix();buildEnv();buildLfo();renderKnobs();drawFilter();drawFx();drawRoute();fit();
+try{const v=localStorage.getItem("pc-view");if(v&&v!=="main")$(`.tabs [data-view="${v}"]`)?.click()}catch(_){}
+</script>

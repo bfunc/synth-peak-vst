@@ -1,0 +1,10 @@
+build/
+builds/
+.vs/
+.vscode/
+.DS_Store
+
+# Third-party screenshots / photos used as references: keep local, not in the public repo
+docs/*.png
+docs/*.jpg
+docs/*.webp

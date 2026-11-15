@@ -1,0 +1,3 @@
+*.syx binary
+*.sh text eol=lf
+* text=auto
