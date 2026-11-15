@@ -149,9 +149,9 @@ void PeakProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuf
     readTransport();
 
     const bool host = peakLink->isHostOutput();
-    juce::MidiBuffer out;
-    handleNotes (midi, out, host);
-    midi.swapWith (out);  // incoming MIDI is replaced by what goes to the synth
+    outBuf.clear();
+    handleNotes (midi, outBuf, host);
+    midi.swapWith (outBuf);  // incoming MIDI is replaced by what goes to the synth
 
     if (! host)
         return;

@@ -33,7 +33,7 @@ public:
     ~PeakProcessor() override;
 
     // ---- juce::AudioProcessor ----
-    void prepareToPlay (double, int) override {}
+    void prepareToPlay (double, int) override { outBuf.ensureSize (8192); }
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout&) const override { return true; }
     using juce::AudioProcessor::processBlock;
@@ -128,6 +128,7 @@ private:
     std::array<uint32_t, 512> noteBuf {};    // packed status | d1 << 8 | d2 << 16
 
     uint32_t paramCursor = 0;                // message thread: last PeakLink param seq applied
+    juce::MidiBuffer outBuf;                 // audio thread: what goes to the host output (allocated once)
 
     Pump pump { *this };
 
