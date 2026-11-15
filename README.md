@@ -18,10 +18,13 @@ code layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · UI preview: [docs/p
 - **Mod matrix**: 16 slots + 4 FX slots; drag a source (rail, envelope or LFO tab) onto a knob to fill a free slot;
   orange rings show modulated knobs.
 - **Fetch / Send**: read the Peak's current patch, or write the editor's into its edit buffer (not its memory).
-- **Presets tab**: read the four banks (read only), search, filter by category, load (program change),
-  import / export .syx.
-- **Save**: into a slot you pick, after reading the slot's old patch into Documents/Peak Control/Backups, then
-  reading it back to check. Or to a .syx file.
+- **Presets tab**: one list, two sources (never mixed).
+  - **Peak**: Read bank / Read all (read only; each finished read also saves a dated backup to
+    `Documents\Peak Control\Backups`), Load (program change), Save to file.
+  - **File**: Open a .syx (a patch, a bank or a backup); Try (plays it through the edit buffer, memory untouched),
+    Copy to Peak (one slot), Send bank to Peak (backs the bank up first, writes 128 patches, reads them back and checks).
+- **Save** (top bar): the editor's patch into a slot you pick, after backing the slot up, then reading it back. Or to a
+  .syx file.
 - **Setup tab**: ports, MIDI channel, output straight to the port or through the DAW, a connection checklist.
 - **Playheads (off by default)**: an "approx" dot on LFO 1/2 in Sync range, following the DAW; a gate light on the
   envelopes for notes passing through the plugin.
