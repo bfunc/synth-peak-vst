@@ -125,6 +125,7 @@ static void testFormat()
     CHECK (formatValue (param ("osc1_wavetable"), 5) == "Random");
     CHECK (formatValue (param ("osc1_wavetable"), 19) == "String");
     CHECK (formatValue (param ("osc1_wavetable"), 63) == "Yeah");
+    CHECK (formatValue (param ("osc1_wavetable"), 64) == "User 1");
     CHECK (formatValue (param ("osc2_range"), 64) == "8'");
     CHECK (formatValue (param ("glide_on"), 1) == "On");
     CHECK (formatValue (param ("osc3_fixed_note"), 0) == "Off");
@@ -256,7 +257,9 @@ static void testDump()
     CHECK (readValue (param ("kbd_octave"), d) == 64);
     CHECK (readValue (param ("glide_time"), d) == 60);
     CHECK (readValue (param ("arp_chance"), d) == 100);
-    CHECK (readValue (param ("osc1_coarse"), d) == -1);  // not mapped yet
+    CHECK (readValue (param ("anim1_hold"), d) == -1);   // a performance button: not in the patch
+    CHECK (readValue (param ("osc1_coarse"), d) == 128);  // measured offset 47-48 (0-255 pair)
+    CHECK (readValue (param ("osc1_range"), d) >= 63 && readValue (param ("osc1_range"), d) <= 66);
 
     // Mod matrix slot 2: ModWheel -> FiltFreq, +6
     CHECK (formatValue (param ("mod2_src_a"), readValue (param ("mod2_src_a"), d)) == "ModWheel");
@@ -279,7 +282,8 @@ static void testDump()
     CHECK (patchName (e) == "A very long patc");
     CHECK (writeValue (param ("mod2_depth"), e, 30));
     CHECK (readValue (param ("mod2_depth"), e) == 30);
-    CHECK (! writeValue (param ("osc1_coarse"), e, 140));  // unmapped: refused
+    CHECK (! writeValue (param ("anim1_hold"), e, 1));  // not in the patch: refused
+    CHECK (writeValue (param ("osc1_coarse"), e, 141) && e[47] == 70 && e[48] == 64);
 
     auto slot = writeSlotDump (4, 127, d);
     CHECK (slot.size() == kPatchMessageBytes && slot[8] == 0x01 && slot[12] == 4 && slot[13] == 127);
@@ -347,7 +351,7 @@ static void testPatchModel()
     r = readValues (msg->data, def);
     CHECK (r.outOfRange.empty());
     // Unmapped parameters keep the fallback; mapped ones come from the dump.
-    CHECK (r.values[(size_t) indexOfId ("osc1_coarse")] == 128);
+    CHECK (r.values[(size_t) indexOfId ("anim1_hold")] == 0);
     CHECK (r.values[(size_t) indexOfId ("unison_detune")] == 25);
     // Writing the values back over the same bytes changes nothing (unmapped bytes are kept).
     CHECK (writeValues (msg->data, r.values) == msg->data);

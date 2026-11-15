@@ -64,6 +64,93 @@ public static class MidiProbe
         lock (heard) return string.Join("\n", heard);
     }
 
+    [DllImport("winmm.dll")] static extern uint midiOutShortMsg(IntPtr h, uint msg);
+
+    // Runs a plan file: each line "label<TAB>hex bytes". Short messages (status < F0) go out as 3-byte messages,
+    // a line starting with F0 goes out as SysEx. After each line, unless the label starts with "!", the edit buffer
+    // is requested and the reply saved as <outDir>/<label>.syx. Returns a log.
+    public static string Run(uint inId, uint outId, string planFile, string outDir, int settleMs)
+    {
+        var log = new StringBuilder();
+        IntPtr hin, hout;
+        uint r = midiInOpen(out hin, inId, IntPtr.Zero, IntPtr.Zero, 0);
+        if (r != 0) return "midiInOpen failed " + r;
+        r = midiOutOpen(out hout, outId, IntPtr.Zero, IntPtr.Zero, 0);
+        if (r != 0) { midiInClose(hin); return "midiOutOpen failed " + r; }
+        int hsz = Marshal.SizeOf(typeof(MIDIHDR));
+        var hdrs = new IntPtr[NBUF];
+        for (int i = 0; i < NBUF; i++)
+        {
+            var h = new MIDIHDR { lpData = Marshal.AllocHGlobal(BUF), dwBufferLength = BUF, dwReserved = new IntPtr[8] };
+            hdrs[i] = Marshal.AllocHGlobal(hsz);
+            Marshal.StructureToPtr(h, hdrs[i], false);
+            midiInPrepareHeader(hin, hdrs[i], (uint)hsz);
+            midiInAddBuffer(hin, hdrs[i], (uint)hsz);
+        }
+        midiInStart(hin);
+        var cur = new List<byte>();
+        byte[] got527 = null;
+        Action poll = () =>
+        {
+            for (int i = 0; i < NBUF; i++)
+            {
+                var h = (MIDIHDR)Marshal.PtrToStructure(hdrs[i], typeof(MIDIHDR));
+                if ((h.dwFlags & MHDR_DONE) == 0) continue;
+                var b = new byte[h.dwBytesRecorded];
+                Marshal.Copy(h.lpData, b, 0, b.Length);
+                foreach (var x in b)
+                {
+                    if (x == 0xF0) cur.Clear();
+                    cur.Add(x);
+                    if (x == 0xF7) { if (cur.Count == 527) got527 = cur.ToArray(); cur.Clear(); }
+                }
+                midiInUnprepareHeader(hin, hdrs[i], (uint)hsz);
+                h.dwFlags = 0; h.dwBytesRecorded = 0;
+                Marshal.StructureToPtr(h, hdrs[i], false);
+                midiInPrepareHeader(hin, hdrs[i], (uint)hsz);
+                midiInAddBuffer(hin, hdrs[i], (uint)hsz);
+            }
+        };
+        Action<byte[]> sendLong = msg =>
+        {
+            IntPtr data = Marshal.AllocHGlobal(msg.Length);
+            Marshal.Copy(msg, 0, data, msg.Length);
+            var oh = new MIDIHDR { lpData = data, dwBufferLength = (uint)msg.Length, dwBytesRecorded = (uint)msg.Length, dwReserved = new IntPtr[8] };
+            IntPtr ohp = Marshal.AllocHGlobal(hsz);
+            Marshal.StructureToPtr(oh, ohp, false);
+            midiOutPrepareHeader(hout, ohp, (uint)hsz);
+            midiOutLongMsg(hout, ohp, (uint)hsz);
+            Thread.Sleep(Math.Max(20, msg.Length / 3));
+            midiOutUnprepareHeader(hout, ohp, (uint)hsz);
+        };
+        var request = Hex("F0 00 20 29 01 10 00 7E 40 00 00 00 00 00 F7");
+        int ok = 0, miss = 0;
+        foreach (var line in File.ReadAllLines(planFile))
+        {
+            if (line.Trim().Length == 0) continue;
+            var parts = line.Split('\t');
+            var label = parts[0];
+            var bytes = parts.Length > 1 ? Hex(parts[1]) : new byte[0];
+            if (bytes.Length > 0 && bytes[0] == 0xF0) sendLong(bytes);
+            else for (int i = 0; i + 2 < bytes.Length; i += 3) { midiOutShortMsg(hout, (uint)(bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16))); Thread.Sleep(2); }
+            if (label.StartsWith("!")) { Thread.Sleep(settleMs); continue; }
+            Thread.Sleep(settleMs);
+            poll(); got527 = null;
+            sendLong(request);
+            var until = DateTime.Now.AddMilliseconds(800);
+            while (got527 == null && DateTime.Now < until) { poll(); Thread.Sleep(3); }
+            if (got527 != null) { File.WriteAllBytes(Path.Combine(outDir, label + ".syx"), got527); ok++; }
+            else { log.AppendLine("no dump after " + label); miss++; }
+        }
+        midiInStop(hin);
+        midiInReset(hin);
+        for (int i = 0; i < NBUF; i++) midiInUnprepareHeader(hin, hdrs[i], (uint)hsz);
+        midiInClose(hin);
+        midiOutClose(hout);
+        log.AppendLine("dumps: " + ok + ", missed: " + miss);
+        return log.ToString();
+    }
+
     const uint MHDR_DONE = 1;
     const int BUF = 4096, NBUF = 8;
 

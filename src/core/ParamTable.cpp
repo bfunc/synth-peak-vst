@@ -66,6 +66,15 @@ const Names kWavetables {
     "SeaBase", "Shmorgan", "Spirals", "Steels", "Sunrise", "Swell", "Thicker", "Thinner", "Tides", "Tokyo", "Tops",
     "V.Chord", "Variance", "Vocaloid", "Vowelled", "WeirdVox", "Yeah" };
 
+// Factory tables 4-63, then user wavetables (values up to 73 seen in the user's patches).
+Names wavetableNames()
+{
+    Names n = kWavetables;
+    for (int i = 1; (int) n.size() < 124; ++i)
+        n.push_back ("User " + std::to_string (i));
+    return n;
+}
+
 const Names kLfoSync { "64 beats", "48 beats", "42 beats", "36 beats", "32 beats", "30 beats", "28 beats",
     "24 beats", "21+1/3", "20 beats", "18+2/3", "18 beats", "16 beats", "13+1/3", "12 beats", "10+2/3", "8 beats",
     "6 beats", "5+1/3", "4 beats", "3 beats", "2+2/3", "2nd", "4th D", "1+1/3", "4th", "8th D", "4th T", "8th",
@@ -94,6 +103,47 @@ const Names kFxSource { "Direct", "ModWheel", "AftTouch", "ExprPED1", "BrthPED2"
 const Names kFxDest { "Dist Lev", "Chor Lev", "ChorRate", "Chor Dep", "Chor FB", "Del Lev", "Del Time", "Del FB",
     "Rev Lev", "Rev Time", "Rev LPF", "Rev HPF", "Rev Size", "RevLpass", "RevHpass", "RevLdamp", "RevHdamp",
     "Del Slew", "DelLdamp", "DelHdamp", "DelWidth", "DelRatio", "Lfo3Rate", "Lfo4Rate", "NoiseLPF", "NoiseHPF" };
+
+// Patch byte of each parameter, measured on the synth (2026-11-15, firmware 2.1.0.8, tools/mapper): each one was set to
+// two values by CC / NRPN and the edit buffer read after each; the byte that changed is its place. 0-255 values take
+// that byte and the next. Parameters mapped by the builder below (Voice, matrices, NRPN-25 block) were confirmed too.
+const std::map<std::string, int> kMeasuredOffsets {
+    { "osc_divergence", 41 }, { "osc_drift", 42 }, { "noise_lpf", 43 }, { "noise_hpf", 44 }, { "osc1_range", 46 },
+    { "osc1_coarse", 47 }, { "osc1_fine", 49 }, { "osc1_env2_pitch", 51 }, { "osc1_lfo2_pitch", 52 },
+    { "osc1_wave", 54 }, { "osc1_wavetable", 55 }, { "osc1_shape_src", 56 }, { "osc1_shape", 57 },
+    { "osc1_env1_shape", 58 }, { "osc1_lfo1_shape", 59 }, { "osc1_vsync", 60 }, { "osc1_saw_density", 61 },
+    { "osc1_saw_detune", 62 }, { "osc1_fixed_note", 63 }, { "osc1_bend", 64 }, { "osc2_range", 67 },
+    { "osc2_coarse", 68 }, { "osc2_fine", 70 }, { "osc2_env2_pitch", 72 }, { "osc2_lfo2_pitch", 73 },
+    { "osc2_wave", 75 }, { "osc2_wavetable", 76 }, { "osc2_shape_src", 77 }, { "osc2_shape", 78 },
+    { "osc2_env1_shape", 79 }, { "osc2_lfo1_shape", 80 }, { "osc2_vsync", 81 }, { "osc2_saw_density", 82 },
+    { "osc2_saw_detune", 83 }, { "osc2_fixed_note", 84 }, { "osc2_bend", 85 }, { "osc3_range", 88 },
+    { "osc3_coarse", 89 }, { "osc3_fine", 91 }, { "osc3_env2_pitch", 93 }, { "osc3_lfo2_pitch", 94 },
+    { "osc3_wave", 96 }, { "osc3_wavetable", 97 }, { "osc3_shape_src", 98 }, { "osc3_shape", 99 },
+    { "osc3_env1_shape", 100 }, { "osc3_lfo1_shape", 101 }, { "osc3_vsync", 102 }, { "osc3_saw_density", 103 },
+    { "osc3_saw_detune", 104 }, { "osc3_fixed_note", 105 }, { "osc3_bend", 106 }, { "mix_osc1", 109 },
+    { "mix_osc2", 111 }, { "mix_osc3", 113 }, { "mix_ring", 115 }, { "mix_noise", 117 }, { "patch_level", 119 },
+    { "vca_gain", 120 }, { "fx_dry", 121 }, { "fx_wet", 122 }, { "flt_overdrive", 123 }, { "flt_postdrive", 124 },
+    { "flt_slope", 125 }, { "flt_shape", 126 }, { "flt_keytrack", 127 }, { "flt_res", 128 }, { "flt_freq", 129 },
+    { "flt_lfo1", 131 }, { "flt_osc3", 133 }, { "flt_env_sel", 134 }, { "flt_ampenv", 135 }, { "flt_modenv1", 136 },
+    { "flt_divergence", 137 }, { "pan", 140 }, { "spread_mode", 141 }, { "amp_attack", 144 }, { "amp_decay", 145 },
+    { "amp_sustain", 146 }, { "amp_release", 147 }, { "amp_velocity", 148 }, { "amp_trigger", 149 },
+    { "modenv_select", 152 }, { "mod1_attack", 153 }, { "mod1_decay", 154 }, { "mod1_sustain", 155 },
+    { "mod1_release", 156 }, { "mod1_velocity", 157 }, { "mod1_trigger", 158 }, { "mod2_attack", 161 },
+    { "mod2_decay", 162 }, { "mod2_sustain", 163 }, { "mod2_release", 164 }, { "mod2_velocity", 165 },
+    { "mod2_trigger", 166 }, { "lfo1_range", 169 }, { "lfo1_rate", 170 }, { "lfo1_sync", 172 }, { "lfo1_wave", 173 },
+    { "lfo1_phase", 174 }, { "lfo1_slew", 175 }, { "lfo1_fade", 176 }, { "lfo1_fade_mode", 177 },
+    { "lfo1_oneshot", 180 }, { "lfo1_common", 181 }, { "lfo2_range", 183 }, { "lfo2_rate", 184 },
+    { "lfo2_sync", 186 }, { "lfo2_wave", 187 }, { "lfo2_phase", 188 }, { "lfo2_slew", 189 }, { "lfo2_fade", 190 },
+    { "lfo2_fade_mode", 191 }, { "lfo2_oneshot", 194 }, { "lfo2_common", 195 }, { "dist_level", 197 },
+    { "fx_bypass", 199 }, { "fx_routing", 200 }, { "dly_level", 202 }, { "dly_time", 203 }, { "dly_width", 205 },
+    { "dly_sync", 206 }, { "dly_sync_time", 207 }, { "dly_feedback", 208 }, { "dly_lp_damp", 209 },
+    { "dly_hp_damp", 210 }, { "dly_slew", 211 }, { "dly_time_mode", 212 }, { "rev_level", 215 }, { "rev_type", 216 },
+    { "rev_time", 217 }, { "rev_damp_lp", 218 }, { "rev_damp_hp", 219 }, { "rev_size", 220 }, { "rev_mod", 221 },
+    { "rev_mod_rate", 222 }, { "rev_lowpass", 223 }, { "rev_highpass", 224 }, { "rev_predelay", 225 },
+    { "cho_level", 227 }, { "cho_type", 228 }, { "cho_rate", 229 }, { "cho_depth", 230 }, { "cho_feedback", 231 },
+    { "cho_lp", 232 }, { "cho_hp", 233 }, { "cho_mode", 234 }, { "arp_sync", 237 }, { "arp_type", 238 },
+    { "arp_rhythm", 239 }, { "arp_octaves", 240 }, { "arp_gate", 241 }, { "arp_swing", 242 }, { "arp_on", 243 },
+    { "arp_latch", 244 }, { "arp_keysync", 245 } };
 
 // ---- builders ----------------------------------------------------------------------------------------------
 
@@ -197,9 +247,11 @@ std::vector<ParamDef> build()
     b.nrpn ("osc_drift", "Osc Drift", 0, 10);
     b.nrpn ("noise_lpf", "Noise LPF", 0, 11, 0, 127, 127);
     b.nrpn ("noise_hpf", "Noise HPF", 0, 12);
-    msb25 (b, "fm_3to1", "FM Osc3>1", 13);
-    msb25 (b, "fm_1to2", "FM Osc1>2", 17);
-    msb25 (b, "fm_2to3", "FM Osc2>3", 21);
+    // The addendum's NRPNs 25:13 / 17 / 21 change nothing on firmware 2.1; the bytes follow the 346 + LSB layout of the
+    // NRPN-25 block (confirmed for 25:34-43), so these are sent by patch rewrite. To confirm by ear.
+    b.patch ("fm_3to1", "FM Osc3>1", kMsb25Base + 13);
+    b.patch ("fm_1to2", "FM Osc1>2", kMsb25Base + 17);
+    b.patch ("fm_2to3", "FM Osc2>3", kMsb25Base + 21);
 
     struct OscNums
     {
@@ -223,7 +275,7 @@ std::vector<ParamDef> build()
         bip (b.cc (k + "env2_pitch", n + "ModEnv2 > Pitch", o.env2Pitch, 1, 127, 64), 64);
         bip (b.pair (k + "lfo2_pitch", n + "LFO2 > Pitch", o.lfo2Pitch, o.lfo2PitchL, 1, 255, 128), 128);
         choice (b.nrpn (k + "wave", n + "Wave", 0, o.wave, 0, 4, 2), kOscWave);
-        choice (b.nrpn (k + "wavetable", n + "Wavetable", 0, o.waveMore, 4, 63, 4), kWavetables);
+        choice (b.nrpn (k + "wavetable", n + "Wavetable", 0, o.waveMore, 4, 127, 4), wavetableNames());
         choice (b.nrpn (k + "shape_src", n + "Shape Source", 0, o.shapeSrc, 0, 2, 0), kShapeSource);
         bip (b.cc (k + "shape", n + "Manual Shape", o.manualShape, 0, 127, 64), 64);
         bip (b.cc (k + "env1_shape", n + "ModEnv1 > Shape", o.env1Shape, 0, 127, 64), 64);
@@ -259,8 +311,8 @@ std::vector<ParamDef> build()
     bip (b.pair ("flt_lfo1", "LFO1 > Filter", 28, 60, 1, 255, 128), 128);
     b.cc ("flt_osc3", "Osc3 > Filter", 76);
     choice (b.nrpn ("flt_env_sel", "Filter Env Select", 0, 47, 0, 1, 1), kFilterEnv);
-    bip (b.cc ("flt_ampenv", "AmpEnv > Filter", 77, 1, 127, 64), 64);
-    bip (b.cc ("flt_modenv1", "ModEnv1 > Filter", 78, 1, 127, 64), 64);
+    bip (b.cc ("flt_ampenv", "AmpEnv > Filter", 77, 0, 127, 64), 64);
+    bip (b.cc ("flt_modenv1", "ModEnv1 > Filter", 78, 0, 127, 64), 64);  // 0 seen in a stored patch
     b.nrpn ("flt_divergence", "Filter Divergence", 0, 48);
 
     // ---- Envelopes ----
@@ -381,7 +433,7 @@ std::vector<ParamDef> build()
     onOff (b.nrpn ("arp_on", "Arp On", 0, 121, 0, 1, 0));
     onOff (b.nrpn ("arp_latch", "Arp Key Latch", 0, 122, 0, 1, 0));
     onOff (b.nrpn ("arp_keysync", "Arp Key Sync", 0, 123, 0, 1, 0));
-    msb25 (b, "arp_chance", "Arp Chance", 33, 1, 100, 100);
+    b.patch ("arp_chance", "Arp Chance", kMsb25Base + 33, 0, 100, 100);  // 0 is in 110 of the user's 512 patches  // NRPN 25:33 is ignored too; see FM
     // The Animate buttons send 127 when pressed and 0 when released (confirmed), not the manual's 0-1.
     onOff (b.cc ("anim1_hold", "Animate 1 Hold", 114, 0, 1, 0)).onValue = 127;
     onOff (b.cc ("anim2_hold", "Animate 2 Hold", 115, 0, 1, 0)).onValue = 127;
@@ -414,6 +466,10 @@ std::vector<ParamDef> build()
         choice (b.patch (k + "dest", n + "Destination", off + 3, 0, dstMax, 0), kFxDest);
     }
 
+    for (auto& p : b.out)
+        if (p.offset < 0)
+            if (auto it = kMeasuredOffsets.find (p.id); it != kMeasuredOffsets.end())
+                p.offset = it->second;
     return std::move (b.out);
 }
 

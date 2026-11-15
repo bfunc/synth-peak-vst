@@ -43,10 +43,11 @@ Every push to `main` builds a zip on GitHub Actions: **Releases → latest**. It
 
 To be confirmed on the synth (see the hardware test):
 
-- Patch byte offsets: only name, category / genre, Voice, the mod and FX matrices and the NRPN-MSB-25 block are
-  mapped. The rest is sent live but not read from a patch yet (Fetch leaves those knobs as they were).
-- The 0–255 CC pair coding, the bank numbering of program changes, the reply format of slot requests.
-- Value list order for mod sources / destinations, FX matrix, wavetables, category / genre, delay sync.
+- FM amounts and Arp Chance: written by patch rewrite (their NRPNs are ignored by firmware 2.1); to confirm by ear.
+- Value list order for mod sources / destinations, FX matrix, category / genre (wavetables and delay sync are confirmed).
+
+Confirmed on the synth: every panel CC / NRPN, the 0–255 CC pair coding, bank select (CC 32 = 1..4), slot reads,
+edit-buffer writes, and the patch byte of all 260 stored parameters (`tools/mapper`).
 
 ## Building
 

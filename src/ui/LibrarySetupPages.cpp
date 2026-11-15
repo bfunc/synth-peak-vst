@@ -95,6 +95,12 @@ void PresetsPage::refresh()
     auto& lib = proc.library();
     if (lib.revision() != seenRev)
         rebuild();
+    const auto origin = proc.session().originText();
+    if (origin != seenOrigin)
+    {
+        seenOrigin = origin;
+        table.repaint();  // only the current patch is highlighted
+    }
     progress = lib.fetching() ? lib.fetchProgress() : 0.0;
     bar.setVisible (lib.fetching());
     stop.setEnabled (lib.fetching());

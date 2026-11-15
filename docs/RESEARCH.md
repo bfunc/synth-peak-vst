@@ -82,6 +82,17 @@ F0 00 20 29 01 10 00 7E <cmd> 00 00 00 <bank> <slot> 00 00 <510 data bytes> F7  
 
 ### Data block map (offsets in the 510 data bytes; absolute = +16)
 
+**Measured 2026-11-15** (tools/mapper, `kMeasuredOffsets` in ParamTable.cpp): 156 parameters found by setting each to two
+values and diffing edit-buffer dumps; every older offset confirmed. The layout follows the manual's MIDI table order:
+Voice 32-39, osc common 41-44, Osc 1 46-64, Osc 2 67-85, Osc 3 88-106, mixer, filter 123-137, envelopes, LFOs, FX
+(routing 200, delay 202-212, reverb 215-225, chorus 227-234), arp, mod matrix 250-313, FX matrix 314-329, NRPN-25
+block 346 + LSB. Checked against all 512 stored patches: values in range except Arp Chance 0 (old patches), user
+wavetables (64-73) and one Delay Sync Time 17.
+Not live: FM 3>1 / 1>2 / 2>3 and Arp Chance ignore their addendum NRPNs (25:13/17/21/33); the editor writes them by
+patch rewrite at 346 + LSB (to confirm by ear). Animate 1/2 are not stored.
+
+Older notes (before measuring):
+
 | Bytes | Content | Status |
 |---|---|---|
 | 0–15 | patch name, 16 ASCII, space padded | confirmed |

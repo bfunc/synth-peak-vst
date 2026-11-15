@@ -35,6 +35,7 @@ private:
     juce::ProgressBar bar { progress };
     std::vector<const peak::Library::Entry*> rows;
     uint32_t seenRev = 0;
+    std::string seenOrigin;  // the highlighted (current) slot; repaint the list when it changes
     std::unique_ptr<juce::FileChooser> chooser;
 };
 

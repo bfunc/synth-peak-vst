@@ -4,6 +4,10 @@
 #   C:\Program Files\Common Files\VST3\Peak Control.vst3   (needs write access to that folder)
 # Run:  powershell -ExecutionPolicy Bypass -File tools\install-latest.ps1
 $ErrorActionPreference = "Stop"
+if (Get-Process -Name "Peak Control" -ErrorAction SilentlyContinue) {
+    "Peak Control is running: close it (and any DAW that has the plugin loaded), then run this again."
+    exit 1
+}
 $repo = Split-Path $PSScriptRoot -Parent
 $dest = Join-Path $repo "builds\latest"
 $tmp = Join-Path $env:TEMP "peak-control-download"
