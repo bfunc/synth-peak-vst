@@ -361,6 +361,8 @@ Unused NRPN numbers in MSB 0 (candidates): 0:8, 0:13, 0:21–22, 0:30–31, 0:39
 **Mod matrix sources (1.2 order):** Direct, ModWheel, AftTouch, ExprPED1, BrthPED2, Velocity, Keyboard, Lfo1+, Lfo1+/-,
 Lfo2+, Lfo2+/-, AmpEnv, ModEnv1, ModEnv2, Animate1, Animate2, CV +/-, Lfo3 +, Lfo3 +/-, Lfo4 +, Lfo4 +/-, BndWhl+, BndWhl-;
 2.0 adds Noise. Real order and numbers: read off the synth.
+Keyboard is bipolar: it goes up and down around the middle of the keyboard (checked on the synth, 2026-11-17); the
+editor's mod ranges treat it like the +/- sources.
 
 **Mod matrix destinations (1.2):** O123Ptch, Osc1Ptch, Osc2Ptch, Osc3Ptch, Osc1VSnc, Osc2VSnc, Osc3VSnc, Osc1Shpe, Osc2Shpe,
 Osc3Shpe, Osc1 Lev, Osc2 Lev, Osc3 Lev, NoiseLev, Ring Lev, VcaLevel, Filt Drv, FiltDist, FiltFreq, Filt Res, Lfo1Rate,
