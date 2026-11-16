@@ -496,12 +496,12 @@ private:
             r.depth = std::make_unique<ParamBar> (ctx, k + "depth");
             r.remove = std::make_unique<juce::TextButton> (juce::CharPointer_UTF8 ("â"));
             r.remove->setTooltip ("Remove this slot.");
-            r.remove->onClick = [this, k]
+            r.remove->onClick = [this, k, self = juce::Component::SafePointer<ModBubble> (this)]
             {
                 for (const char* f : { "src_a", "src_b", "dest" })
                     ctx.params.setByUser ((size_t) indexOfId (k + f), 0);
                 ctx.params.setByUser ((size_t) indexOfId (k + "depth"), 64);
-                juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<ModBubble> (this)]
+                juce::MessageManager::callAsync ([safe = self]
                 {
                     if (safe == nullptr)
                         return;
