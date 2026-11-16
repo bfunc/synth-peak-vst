@@ -548,8 +548,14 @@ std::string formatValue (const ParamDef& p, int value)
         case Kind::Int:
             break;
     }
-    if (p.id.size() > 10 && p.id.compare (p.id.size() - 10, 10, "fixed_note") == 0 && value == 0)
-        return "Off";
+    if (p.id.size() > 10 && p.id.compare (p.id.size() - 10, 10, "fixed_note") == 0)
+    {
+        // 0 = Off; 1..88 = the MIDI note C#-2..E5 (the Peak's naming: middle C = C3).
+        if (value <= 0)
+            return "Off";
+        static const char* nn[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        return std::string (nn[value % 12]) + std::to_string (value / 12 - 2);
+    }
     return std::to_string (value);
 }
 

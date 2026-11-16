@@ -130,6 +130,8 @@ static void testFormat()
     CHECK (formatValue (param ("osc2_range"), 64) == "8'");
     CHECK (formatValue (param ("glide_on"), 1) == "On");
     CHECK (formatValue (param ("osc3_fixed_note"), 0) == "Off");
+    CHECK (formatValue (param ("osc3_fixed_note"), 1) == "C#-2" && formatValue (param ("osc3_fixed_note"), 60) == "C3"
+           && formatValue (param ("osc3_fixed_note"), 88) == "E5");
     CHECK (formatValue (param ("arp_sync"), 15) == "16th");
     CHECK (formatValue (param ("dly_sync_time"), 0) == "4 beats" && formatValue (param ("dly_sync_time"), 8) == "4th T");
     CHECK (formatValue (param ("lfo1_sync"), 34) == "32nd T");
