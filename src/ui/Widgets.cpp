@@ -66,6 +66,45 @@ ParamKnob::ParamKnob (UiContext& c, const std::string& id, const juce::String& l
     }
     slider.onValueChange = [this] { repaint(); };
     slider.setTooltip (getTooltip());
+    slider.addMouseListener (this, false);
+    slider.altWheel = [this] (int steps)
+    {
+        if (ctx.onModWheel)
+            ctx.onModWheel (def().id, steps);
+        return true;
+    };
+}
+
+ParamKnob::~ParamKnob() { slider.removeMouseListener (this); }
+
+void ParamKnob::mouseUp (const juce::MouseEvent& e)
+{
+    // A plain click (no drag) on a modulated knob opens its slot list, unless it turns out to be a double-click.
+    if (e.eventComponent != &slider || e.mouseWasDraggedSinceMouseDown() || e.getNumberOfClicks() > 1 || ! mod.any()
+        || e.mods.isAnyModifierKeyDown() || ! ctx.onModClick)
+        return;
+    const int token = ++clickToken;
+    juce::Timer::callAfterDelay (260, [safe = juce::Component::SafePointer<ParamKnob> (this), token]
+    {
+        if (safe != nullptr && safe->clickToken == token && safe->ctx.onModClick)
+            safe->ctx.onModClick (safe->def().id, *safe);
+    });
+}
+
+void ParamKnob::mouseDoubleClick (const juce::MouseEvent&) { ++clickToken; }
+
+void ParamKnob::setSaved (int s)
+{
+    if (s == saved)
+        return;
+    saved = s;
+    const auto& p = def();
+    const double norm = s < 0 ? -1.0 : (double) (s - p.min) / (double) juce::jmax (1, p.max - p.min);
+    slider.getProperties().set ("saved", norm);
+    // Double-click goes back to the saved value (the factory default when nothing is saved).
+    if (attachment)
+        slider.setDoubleClickReturnValue (true, plainFromTable (p, s < 0 ? p.def : s));
+    slider.repaint();
 }
 
 void ParamKnob::resized()
@@ -87,7 +126,7 @@ void ParamKnob::paint (juce::Graphics& g)
     auto r = getLocalBounds();
     r.removeFromTop (slider.getBottom());
     const bool hot = slider.isMouseOverOrDragging();
-    const bool modded = std::abs ((double) slider.getProperties().getWithDefault ("mod", 0.0)) > 0.001;
+    const bool modded = mod.any();
     if (showValue)
     {
         g.setFont (fontMono (10.5f));
@@ -95,16 +134,21 @@ void ParamKnob::paint (juce::Graphics& g)
         g.drawText (slider.getTextFromValue (slider.getValue()), r.removeFromTop (13), juce::Justification::centred);
     }
     g.setFont (fontUi (10.5f));
-    g.setColour (modded ? led : (hot ? ink : ink3));
+    g.setColour (mod.focus ? ledSoft : (modded ? led : (hot ? ink : ink3)));
     g.drawFittedText (label.toUpperCase(), r.removeFromTop (14), juce::Justification::centred, 1, 0.8f);
 }
 
-void ParamKnob::setModAmount (double m)
+void ParamKnob::setModInfo (const ModInfo& m)
 {
-    const double old = (double) slider.getProperties().getWithDefault ("mod", 0.0);
-    if (std::abs (old - m) < 1e-6)
+    if (m == mod)
         return;
-    slider.getProperties().set ("mod", m);
+    mod = m;
+    auto& pr = slider.getProperties();
+    pr.set ("modLo", m.lo);
+    pr.set ("modHi", m.hi);
+    pr.set ("modFocus", m.focus);
+    pr.set ("modFLo", m.flo);
+    pr.set ("modFHi", m.fhi);
     slider.repaint();
     repaint();
 }
@@ -368,6 +412,21 @@ void ParamBar::mouseDoubleClick (const juce::MouseEvent&)
 {
     if (attachment)
         attachment->setValueAsCompleteGesture (plainFromTable (def(), def().def));
+}
+
+void ParamBar::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w)
+{
+    wheelAcc += w.deltaY;
+    const int steps = (int) (wheelAcc / 0.08f);
+    if (steps == 0)
+        return;
+    wheelAcc -= (float) steps * 0.08f;
+    const auto& p = def();
+    int v = juce::jlimit (p.min, p.max, ctx.params.value ((size_t) idx) + steps);
+    if (p.kind == Kind::Bipolar && v == p.center)  // a mod depth of 0 would empty the slot: skip it
+        v += steps > 0 ? 1 : -1;
+    if (attachment)
+        attachment->setValueAsCompleteGesture (plainFromTable (p, juce::jlimit (p.min, p.max, v)));
 }
 
 // ---------------------------------------------------------------------------------------------------------------

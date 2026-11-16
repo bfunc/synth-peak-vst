@@ -129,6 +129,101 @@ void WaveGraph::draw (juce::Graphics& g, juce::Rectangle<float> r)
     strokeFilled (g, p, r, mid);
 }
 
+// ---- wave icon ----
+
+std::vector<int> WaveIcon::inputs() const
+{
+    return { v (k + "wave"), v (k + "wavetable"), v (k + "shape"), v (k + "saw_density"), v (k + "saw_detune") };
+}
+
+void WaveIcon::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    auto r = getLocalBounds().toFloat();
+    g.setColour (well);
+    g.fillRoundedRectangle (r, 2.0f);
+    const float mid = r.getCentreY(), a = r.getHeight() * 0.36f;
+    g.setColour (juce::Colour (0xff232a33));
+    g.drawHorizontalLine ((int) mid, r.getX() + 1, r.getRight() - 1);
+    const int wave = v (k + "wave");
+    const int shapeV = v (k + "shape");
+    const double s = (shapeV - 64) / 64.0;
+    auto in = r.reduced (2.0f, 0.0f);
+    juce::Path p;
+    if (wave >= 4)
+    {
+        for (int i = 0; i <= 120; ++i)
+        {
+            const double t = i / 120.0;
+            const double y = 0.62 * std::sin (2 * kPi * t) + 0.3 * std::sin (4 * kPi * t + 0.6) + 0.14 * std::sin (6 * kPi * t + 1.2);
+            const float px = in.getX() + (float) t * in.getWidth(), py = mid - (float) y * a;
+            i == 0 ? p.startNewSubPath (px, py) : p.lineTo (px, py);
+        }
+        juce::Path dashed;
+        const float dash[] = { 3.0f, 3.0f };
+        juce::PathStrokeType (1.4f).createDashedStroke (dashed, p, dash, 2);
+        g.setColour (ink3.withAlpha (0.45f));
+        g.fillPath (dashed);
+        const int tbl = paramTable()[(size_t) indexOfId (k + "wavetable")].min;
+        const int number = v (k + "wavetable") - tbl + 1;
+        g.setColour (led);
+        g.setFont (fontUi (8.5f));
+        g.drawText (number <= 60 ? "WAVETABLE " + juce::String (number) : juce::String ("USER TABLE"),
+                    r.reduced (5, 2).removeFromTop (10), juce::Justification::topLeft);
+    }
+    else
+    {
+        const float x0 = in.getX(), w = in.getWidth();
+        if (wave == 3)
+        {
+            const float duty = (float) (0.5 + 0.46 * s);
+            p.startNewSubPath (x0, mid - a);
+            p.lineTo (x0 + duty * w, mid - a);
+            p.lineTo (x0 + duty * w, mid + a);
+            p.lineTo (x0 + w, mid + a);
+        }
+        else if (wave == 2)
+        {
+            p.startNewSubPath (x0, mid);
+            p.lineTo (x0 + w * 0.5f, mid - a);
+            p.lineTo (x0 + w * 0.5f, mid + a);
+            p.lineTo (x0 + w, mid);
+        }
+        else
+        {
+            for (int i = 0; i <= 120; ++i)
+            {
+                const double t = i / 120.0;
+                const double y = wave == 0 ? std::sin (2 * kPi * t) : (t < 0.25 ? 4 * t : (t < 0.75 ? 2 - 4 * t : 4 * t - 4));
+                const float px = x0 + (float) t * w, py = mid - (float) y * a;
+                i == 0 ? p.startNewSubPath (px, py) : p.lineTo (px, py);
+            }
+        }
+        if (wave == 2 && v (k + "saw_density") > 0)
+        {
+            const float alpha = (float) v (k + "saw_density") / 127.0f * 0.75f;
+            const float dx = 2.0f + std::abs (v (k + "saw_detune") - 64) / 64.0f * 9.0f;
+            g.setColour (accent.withAlpha (alpha));
+            for (float d : { dx, -dx })
+            {
+                juce::Path c (p);
+                c.applyTransform (juce::AffineTransform::translation (d, 0));
+                g.strokePath (c, juce::PathStrokeType (1.4f));
+            }
+        }
+        g.setColour (ink2);
+        g.strokePath (p, juce::PathStrokeType (1.5f, juce::PathStrokeType::mitered));
+        if (wave < 3 && shapeV != 64)
+        {
+            g.setColour (ink3);
+            g.setFont (fontUi (8.5f));
+            g.drawText ("SHAPED", r.reduced (5, 2).removeFromTop (10), juce::Justification::topRight);
+        }
+    }
+    g.setColour (juce::Colours::black);
+    g.drawRoundedRectangle (r.reduced (0.5f), 2.0f, 1.0f);
+}
+
 // ---- filter ----
 
 std::vector<int> FilterGraph::inputs() const

@@ -49,6 +49,23 @@ private:
     std::string k;
 };
 
+// The small wave icon of an oscillator: one ideal cycle (rising saw; pulse width follows Shape). Wavetables can't be
+// read from the Peak, so they show a greyed placeholder curve and their number. With Saw Density up, two faint
+// copies show the thickening (an illustration).
+class WaveIcon : public GraphBase
+{
+public:
+    WaveIcon (ParamBridge& p, int osc) : GraphBase (p), k ("osc" + std::to_string (osc) + "_") {}
+    void paint (juce::Graphics&) override;
+
+protected:
+    std::vector<int> inputs() const override;
+    void draw (juce::Graphics&, juce::Rectangle<float>) override {}
+
+private:
+    std::string k;
+};
+
 class FilterGraph : public GraphBase
 {
 public:

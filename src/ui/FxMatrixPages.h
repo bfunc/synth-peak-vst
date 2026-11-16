@@ -13,12 +13,45 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     void refresh() override;
+    // The 10 control columns every effect row shares, so knobs line up down the rack.
+    static juce::Rectangle<int> span (juce::Rectangle<int> grid, int from, int to);  // columns from..to-1 (1-based)
 
 private:
     std::string key;
     WidgetSet w;
     FxGraph graph;
     int lastSync = -1;
+    std::vector<std::pair<juce::String, juce::Rectangle<int>>> groups;
+};
+
+// Routing: ‹ name › and a top-to-bottom flow picture (IN, the three effects in parallel or in series, OUT).
+class RoutingView : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit RoutingView (UiContext&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    int value() const;
+    void setValue (int);
+    UiContext& ctx;
+    int idx;
+    juce::TextButton prev { juce::CharPointer_UTF8 ("\xe2\x80\xb9") }, next { juce::CharPointer_UTF8 ("\xe2\x80\xba") };
+    std::unique_ptr<juce::ParameterAttachment> att;
+};
+
+class FxGlobal : public PanelFrame
+{
+public:
+    explicit FxGlobal (UiContext&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+
+private:
+    WidgetSet w;
+    RoutingView routing;
 };
 
 class FxPage : public juce::Component, public Refreshable
@@ -29,9 +62,8 @@ public:
     void refresh() override;
 
 private:
-    PanelFrame top;
-    WidgetSet w;
-    std::array<std::unique_ptr<FxRow>, 4> rows;
+    FxGlobal global;
+    std::array<std::unique_ptr<FxRow>, 3> rows;
 };
 
 // A matrix panel: column headers and slot numbers around the rows.

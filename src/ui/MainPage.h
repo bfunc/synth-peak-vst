@@ -1,5 +1,7 @@
-// The Main tab: source rail | oscillators, mixer, filter | envelopes, LFOs, voice, arp (docs/panel-mockup.html).
-// Each panel is its own class; what it shows comes from ui/Layout.cpp, so panels only do layout.
+// The Main tab, as in the design canvas mock:
+//   source rail | oscillators (3 rows) | mixer (lined up with the rows) | filter
+//   source rail | envelopes | LFOs | voice + arp, drive | analog
+// What each panel shows comes from ui/Layout.cpp; the classes here only do layout and drawing.
 #pragma once
 
 #include "plugin/UiFeed.h"
@@ -9,38 +11,69 @@
 #include <array>
 #include <functional>
 
-// Wave choice across two parameters: Sine..Pulse, then the 60 wavetables ("More" + wavetable).
-class WaveSelector : public juce::Component
+// ‹ name › over the wave icon. Click the name: the wave picker (basic waves + 60 wavetables).
+class WaveCell : public juce::Component
 {
 public:
-    WaveSelector (UiContext&, int osc);
+    WaveCell (UiContext&, int osc);
     void resized() override;
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    WaveIcon& iconRef() { return icon; }
+    int position() const;          // 0..3 basic waves, 4.. wavetables (choice index + 4)
+    void setPosition (int pos);
 
 private:
-    int position() const;          // 0..3 basic waves, 4.. wavetables
-    void setPosition (int pos);
+    juce::Rectangle<int> nameArea() const;
     UiContext& ctx;
-    int waveIdx, tableIdx;
+    int n, waveIdx, tableIdx;
     juce::TextButton prev { juce::CharPointer_UTF8 ("\xe2\x80\xb9") }, next { juce::CharPointer_UTF8 ("\xe2\x80\xba") };
     std::unique_ptr<juce::ParameterAttachment> waveAtt, tableAtt;
+    WaveIcon icon;
 };
 
-class OscPanel : public PanelFrame, public Refreshable
+// The small gear next to "OSC n": opens Fixed Note and Bend Range. Lit when either is not at its default.
+class CogButton : public juce::Button
 {
 public:
-    OscPanel (UiContext&, int osc);
+    CogButton() : juce::Button ("Oscillator settings") {}
+    bool lit = false;
+
+protected:
+    void paintButton (juce::Graphics&, bool over, bool down) override;
+};
+
+class OscRow : public juce::Component, public Refreshable
+{
+public:
+    OscRow (UiContext&, int osc);
     void resized() override;
     void paint (juce::Graphics&) override;
     void refresh() override;
 
 private:
+    UiContext& ctx;
     int n;
-    int lastSource = -1;
+    int lastSource = -1, lastWave = -1, lastCog = -1, lastDensity = -1;
     WidgetSet w;
-    WaveSelector wave;
-    WaveGraph graph;
+    WaveCell wave;
+    CogButton cog;
+};
+
+class OscSection : public PanelFrame, public Refreshable
+{
+public:
+    explicit OscSection (UiContext&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
+    void refresh() override;
+    // Columns of a row: Range | Pitch | Pitch Mod | Wave | Shape | Sync·FM (shared with the header).
+    static std::array<juce::Rectangle<int>, 6> columns (juce::Rectangle<int> row);
+    // Row i of a 3-row panel below its 24 px header (the mixer uses the same rows).
+    static juce::Rectangle<int> rowArea (juce::Rectangle<int> panel, int i);
+
+private:
+    std::array<std::unique_ptr<OscRow>, 3> rows;
 };
 
 class MixerPanel : public PanelFrame
@@ -48,6 +81,7 @@ class MixerPanel : public PanelFrame
 public:
     explicit MixerPanel (UiContext&);
     void resized() override;
+    void paint (juce::Graphics&) override;
 
 private:
     WidgetSet w;
@@ -65,25 +99,26 @@ private:
     int lastEnv = -1;
     WidgetSet w;
     FilterGraph graph;
+    juce::Rectangle<int> cutoffCap, modCap, envCap;
 };
 
-// Vertical tabs on the left of the envelope and LFO panels; each tab also carries a drag grip for its mod source.
-class SideTabs : public juce::Component
+// Tabs along a panel header; each tab carries a drag grip for its mod source.
+class HeaderTabs : public juce::Component
 {
 public:
-    SideTabs (const juce::StringArray& names, const std::vector<int>& modSources);
+    HeaderTabs (const juce::StringArray& names, const std::vector<int>& modSources);
     std::function<void (int)> onSelect;
     int selected() const { return sel; }
     void resized() override;
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
-    juce::Rectangle<int> extraArea() const;  // free space below the tabs
+    int preferredWidth() const;
 
 private:
+    juce::Rectangle<int> tabRect (int i) const;
     juce::StringArray names;
     juce::OwnedArray<DragSource> grips;
     int sel = 0;
-    static constexpr int kTabH = 32;
 };
 
 class EnvPanel : public PanelFrame, public Refreshable
@@ -97,10 +132,11 @@ public:
 private:
     void show (int tab);
     WidgetSet w;
-    SideTabs tabs;
+    HeaderTabs tabs;
     EnvGraph graph;
     const UiFeed& feed;
     std::function<bool()> playheadsOn;
+    juce::Rectangle<int> noteArea, trigCap;
     int held = -1;
     uint32_t ons = 0;
     double flashUntil = 0;
@@ -112,13 +148,15 @@ class LfoPanel : public PanelFrame, public Refreshable
 public:
     LfoPanel (UiContext&, const UiFeed&, std::function<bool()> playheadsOn);
     void resized() override;
+    void paint (juce::Graphics&) override;
     void refresh() override;
 
 private:
     void show (int tab);
     WidgetSet w;
-    SideTabs tabs;
+    HeaderTabs tabs;
     LfoGraph graph;
+    juce::Rectangle<int> noteArea, fadeCap;
     int lastRange = -1;
 };
 
@@ -127,9 +165,11 @@ class VoicePanel : public PanelFrame
 public:
     explicit VoicePanel (UiContext&);
     void resized() override;
+    void paint (juce::Graphics&) override;
 
 private:
     WidgetSet w;
+    juce::Rectangle<int> modeCap, octCap, spreadCap;
 };
 
 class ArpPanel : public PanelFrame
@@ -137,6 +177,20 @@ class ArpPanel : public PanelFrame
 public:
     explicit ArpPanel (UiContext&);
     void resized() override;
+    void paint (juce::Graphics&) override;
+
+private:
+    WidgetSet w;
+    juce::Rectangle<int> typeCap, rateCap, rhythmCap;
+};
+
+// Drive stages in signal order | analogue character (diverge, drift).
+class DrivePanel : public PanelFrame
+{
+public:
+    explicit DrivePanel (UiContext&);
+    void resized() override;
+    void paint (juce::Graphics&) override;
 
 private:
     WidgetSet w;
@@ -162,11 +216,12 @@ public:
 
 private:
     SourceRail rail;
-    std::array<std::unique_ptr<OscPanel>, 3> oscs;
+    OscSection oscs;
     MixerPanel mixer;
     FilterPanel filter;
     EnvPanel env;
     LfoPanel lfo;
     VoicePanel voice;
     ArpPanel arp;
+    DrivePanel drive;
 };

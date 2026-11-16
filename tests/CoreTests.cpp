@@ -483,6 +483,27 @@ static void testLibrary()
     CHECK (parsed.size() == 1 && parsed[0].bank == 1 && parsed[0].slot == 5 && parsed[0].data == a);
 }
 
+static void testModRange()
+{
+    using namespace peak::ui;
+    auto v = defaultValues();
+    auto set = [&] (const std::string& id, int x) { v[(size_t) indexOfId (id)] = x; };
+    // slot 1: Direct -> FiltFreq +32 ; slot 2: Lfo1+/- -> FiltFreq +16 ; slot 3: ModWheel -> FiltFreq -8
+    set ("mod1_src_a", 0); set ("mod1_dest", 18); set ("mod1_depth", 64 + 32);
+    set ("mod2_src_a", 8); set ("mod2_dest", 18); set ("mod2_depth", 64 + 16);
+    set ("mod3_src_a", 1); set ("mod3_dest", 18); set ("mod3_depth", 64 - 8);
+    const auto r = modRangeFor ("flt_freq", v);
+    CHECK (std::abs (r.lo - (0.5 - 0.25 - 0.125)) < 1e-9 && std::abs (r.hi - (0.5 + 0.25)) < 1e-9);
+    CHECK (slotsFor ("flt_freq", v).size() == 3);
+    CHECK (sourceBipolar (false, 8) && ! sourceBipolar (false, 1) && sourceBipolar (false, 6) && ! sourceBipolar (false, 0));
+    // dropping Mod Wheel again on the filter reuses slot 3
+    const auto t = slotForDrop (1, "flt_freq", v);
+    CHECK (t.existing && t.slot == 3 && ! t.fx);
+    // a new source takes the first empty slot
+    const auto t2 = slotForDrop (5, "flt_freq", v);
+    CHECK (! t2.existing && t2.slot == 4);
+}
+
 static void testLayout()
 {
     using namespace peak::ui;
@@ -524,10 +545,10 @@ static void testLayout()
                 return true;
         return false;
     };
-    CHECK (has ("osc1", "osc1_fixed_note"));
+    CHECK (! has ("osc1", "osc1_fixed_note"));  // the oscillator's cog pop-out
     CHECK (has ("mixer", "noise_lpf"));
-    CHECK (has ("voice", "pan"));
-    CHECK (has ("reverb", "rev_mod"));
+    CHECK (! has ("voice", "pan"));             // on the Voice panel
+    CHECK (! has ("reverb", "rev_mod"));        // on the Reverb row
     CHECK (has ("env", "anim1_attack"));
 }
 
@@ -794,6 +815,7 @@ int main()
     testLink();
     testLibrary();
     testLayout();
+    testModRange();
     testSync();
     testSlotWrite();
     testModMap();

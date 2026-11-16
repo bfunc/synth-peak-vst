@@ -109,10 +109,31 @@ void PeakLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, 
     arc (rTrack, start, end, juce::Colour (0xff0a0c0f), thick);
     arc (rTrack, a0, a, s.isEnabled() ? accent : ink3, thick);
 
-    const double mod = (double) s.getProperties().getWithDefault ("mod", 0.0);
-    if (std::abs (mod) > 0.001)
-        arc (rTrack + thick * 0.95f, a, juce::jlimit (start, end, a + (float) mod * (end - start) * 0.5f), led,
-             juce::jmax (1.5f, thick * 0.6f));
+    // Modulation: the reach of all slots (depth 64 = the whole knob), the selected slot bright on top.
+    const auto& pr = s.getProperties();
+    const double lo = pr.getWithDefault ("modLo", 0.0), hi = pr.getWithDefault ("modHi", 0.0);
+    const bool focus = pr.getWithDefault ("modFocus", false);
+    auto at = [&] (double m) { return juce::jlimit (start, end, a + (float) m * (end - start)); };
+    const float rMod = rTrack + thick * 0.95f, modThick = juce::jmax (1.5f, thick * 0.6f);
+    if (lo != 0 || hi != 0)
+        arc (rMod, at (lo), at (hi), led.withAlpha (focus ? 0.72f : 1.0f), modThick);
+    if (focus)
+    {
+        const double flo = pr.getWithDefault ("modFLo", 0.0), fhi = pr.getWithDefault ("modFHi", 0.0);
+        arc (rMod, at (flo), at (fhi), ledSoft.withAlpha (0.35f), modThick * 2.6f);
+        arc (rMod, at (flo), at (fhi), ledSoft, modThick * 1.3f);
+    }
+    // Saved value: a short notch across the track (only when the knob is away from it).
+    const double sv = pr.getWithDefault ("saved", -1.0);
+    if (sv >= 0 && std::abs (sv - pos) > 0.004)
+    {
+        const float sa = start + (float) sv * (end - start);
+        const auto n1 = c.getPointOnCircumference (rTrack - thick * 0.75f, sa), n2 = c.getPointOnCircumference (rTrack + thick * 0.75f, sa);
+        g.setColour (juce::Colours::black.withAlpha (0.8f));
+        g.drawLine ({ n1, n2 }, 3.4f);
+        g.setColour (juce::Colour (0xffeef2f6));
+        g.drawLine ({ n1, n2 }, 1.9f);
+    }
 
     const float rBody = rTrack - thick * 1.2f;
     g.setColour (knob);

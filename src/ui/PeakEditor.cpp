@@ -387,6 +387,149 @@ private:
 };
 
 // ---------------------------------------------------------------------------------------------------------------
+// A modulated knob's slots: pick one (Alt + wheel then sets its depth), change depth, remove; Open in Matrix.
+
+class ModBubble : public juce::Component
+{
+public:
+    ModBubble (UiContext& c, const std::string& paramId, std::function<juce::String (const ui::SlotRef&)> describe,
+               std::function<void()> openMatrix)
+        : ctx (c), id (paramId), text (std::move (describe)), matrix (std::move (openMatrix))
+    {
+        const int i = indexOfId (id);
+        title = i >= 0 ? juce::String (paramTable()[(size_t) i].name) : juce::String (id);
+        link.onClick = [this]
+        {
+            if (matrix)
+                matrix();
+            if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
+                box->dismiss();
+        };
+        addAndMakeVisible (link);
+        rebuild();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        g.fillAll (juce::Colour (0xff1a1f25));
+        g.setColour (led);
+        g.fillRect (0, 0, getWidth(), 2);
+        g.setColour (ink);
+        g.setFont (fontUi (11.0f).withExtraKerningFactor (0.1f));
+        g.drawText (title.toUpperCase(), 10, 4, getWidth() - 20, 22, juce::Justification::centredLeft);
+        g.setColour (ink3);
+        g.setFont (fontBody (10.5f));
+        g.drawText (juce::String ((int) rows.size()) + (rows.size() == 1 ? " slot" : " slots") + " " + juce::String::charToString ((juce::juce_wchar) 0x00B7)
+                        + " click a name to select it",
+                    10, 4, getWidth() - 20, 22, juce::Justification::centredRight);
+        for (size_t r = 0; r < rows.size(); ++r)
+        {
+            auto line = rowRect ((int) r);
+            g.setColour (juce::Colour (0xff0d1013));
+            g.drawHorizontalLine (line.getY(), 0.0f, (float) getWidth());
+            const bool sel = ctx.focus == rows[r].ref;
+            auto name = line.withWidth (getWidth() - 10 - 150).withTrimmedLeft (10);
+            if (sel)
+            {
+                g.setColour (led.withAlpha (0.08f));
+                g.fillRect (name.withTrimmedLeft (-4).reduced (0, 3));
+                g.setColour (led);
+                g.fillRect (name.getX() - 4, name.getY() + 3, 2, name.getHeight() - 6);
+            }
+            g.setColour (ink);
+            g.setFont (fontUi (11.5f));
+            g.drawText (rows[r].label, name.removeFromTop (name.getHeight() / 2 + 2).withTrimmedTop (4), juce::Justification::bottomLeft);
+            g.setColour (ink3);
+            g.setFont (fontUi (9.5f, false));
+            g.drawText (juce::String (rows[r].ref.fx ? "FX slot " : "Slot ") + juce::String (rows[r].ref.slot) + (sel ? juce::String (" " "Â·" " selected") : juce::String()),
+                        name.withTrimmedTop (2), juce::Justification::topLeft);
+        }
+        g.setColour (juce::Colour (0xff0b0d10));
+        g.drawHorizontalLine (getHeight() - 30, 0.0f, (float) getWidth());
+        g.setColour (ink3);
+        g.setFont (fontBody (11.0f));
+        g.drawText ("Alt + wheel on the knob sets the selected slot.", 10, getHeight() - 30, 220, 30, juce::Justification::centredLeft);
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        for (size_t r = 0; r < rows.size(); ++r)
+            if (rowRect ((int) r).withWidth (getWidth() - 160).contains (e.getPosition()))
+            {
+                ctx.focus = rows[r].ref;
+                repaint();
+            }
+    }
+
+    void resized() override
+    {
+        for (size_t r = 0; r < rows.size(); ++r)
+        {
+            auto line = rowRect ((int) r);
+            rows[r].remove->setBounds (line.removeFromRight (30).withSizeKeepingCentre (22, 22));
+            rows[r].depth->setBounds (line.removeFromRight (128).withSizeKeepingCentre (128, 22));
+        }
+        link.setBounds (getWidth() - 110, getHeight() - 26, 100, 22);
+    }
+
+private:
+    struct Row
+    {
+        ui::SlotRef ref;
+        juce::String label;
+        std::unique_ptr<ParamBar> depth;
+        std::unique_ptr<juce::TextButton> remove;
+    };
+
+    juce::Rectangle<int> rowRect (int r) const { return { 0, 30 + r * 42, getWidth(), 42 }; }
+
+    void rebuild()
+    {
+        rows.clear();
+        for (const auto& ref : ui::slotsFor (id, ctx.params.values()))
+        {
+            Row r;
+            r.ref = ref;
+            r.label = text ? text (ref) : juce::String();
+            const auto k = (ref.fx ? "fxmod" : "mod") + std::to_string (ref.slot) + "_";
+            r.depth = std::make_unique<ParamBar> (ctx, k + "depth");
+            r.remove = std::make_unique<juce::TextButton> (juce::CharPointer_UTF8 ("â"));
+            r.remove->setTooltip ("Remove this slot.");
+            r.remove->onClick = [this, k]
+            {
+                for (const char* f : { "src_a", "src_b", "dest" })
+                    ctx.params.setByUser ((size_t) indexOfId (k + f), 0);
+                ctx.params.setByUser ((size_t) indexOfId (k + "depth"), 64);
+                juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<ModBubble> (this)]
+                {
+                    if (safe == nullptr)
+                        return;
+                    safe->rebuild();
+                    if (safe->rows.empty())
+                        if (auto* box = safe->findParentComponentOfClass<juce::CallOutBox>())
+                            box->dismiss();
+                });
+            };
+            addAndMakeVisible (*r.depth);
+            addAndMakeVisible (*r.remove);
+            rows.push_back (std::move (r));
+        }
+        setSize (330, 30 + (int) rows.size() * 42 + 30);
+        resized();
+        repaint();
+    }
+
+    UiContext& ctx;
+    std::string id;
+    std::function<juce::String (const ui::SlotRef&)> text;
+    std::function<void()> matrix;
+    juce::String title;
+    std::vector<Row> rows;
+    juce::TextButton link { juce::CharPointer_UTF8 ("Open in Matrix âº") };
+};
+
+// ---------------------------------------------------------------------------------------------------------------
 
 PeakEditor::PeakEditor (PeakProcessor& p)
     : AudioProcessorEditor (p), proc (p), ctx { p.params(), {}, {} }
@@ -394,6 +537,13 @@ PeakEditor::PeakEditor (PeakProcessor& p)
     setLookAndFeel (&look);
     juce::LookAndFeel::setDefaultLookAndFeel (&look);
     ctx.onSourceDropped = [this] (int s, const std::string& id) { sourceDropped (s, id); };
+    ctx.onModClick = [this] (const std::string& id, juce::Component& knob) { showSlots (id, knob); };
+    ctx.onModWheel = [this] (const std::string& id, int steps) { modWheel (id, steps); };
+    ctx.savedValue = [this] (int i)
+    {
+        const auto& b = proc.session().baselineValues();
+        return i >= 0 && (size_t) i < b.size() ? b[(size_t) i] : -1;
+    };
 
     auto playheadsOn = [this] { return proc.getSettings().playheads; };
     pages.push_back ({ "Main", std::make_unique<MainPage> (ctx, proc.feed(), playheadsOn) });
@@ -467,11 +617,83 @@ void PeakEditor::timerCallback()
 void PeakEditor::updateModRings()
 {
     auto v = proc.params().values();
-    if (v == lastValues)
+    const auto& saved = proc.session().baselineValues();
+    if (v == lastValues && saved == lastSaved && ctx.focus == lastFocus)
         return;
     lastValues = std::move (v);
+    lastSaved = saved;
+    lastFocus = ctx.focus;
     for (auto* w : ctx.registry)
-        w->setModAmount (ui::modAmountFor (w->def().id, lastValues));
+    {
+        const auto& id = w->def().id;
+        ModInfo m;
+        const auto r = ui::modRangeFor (id, lastValues);
+        m.lo = r.lo;
+        m.hi = r.hi;
+        for (const auto& ref : ui::slotsFor (id, lastValues))
+            if (ref == ctx.focus)
+            {
+                const auto f = ui::slotRange (ref, lastValues);
+                m.focus = true;
+                m.flo = f.lo;
+                m.fhi = f.hi;
+            }
+        w->setModInfo (m);
+        w->setSaved (lastSaved.empty() ? -1 : lastSaved[(size_t) w->index()]);
+    }
+}
+
+juce::String PeakEditor::slotText (const ui::SlotRef& r) const
+{
+    const auto k = (r.fx ? "fxmod" : "mod") + std::to_string (r.slot) + "_";
+    const auto& p = proc.params();
+    const auto& defA = paramTable()[(size_t) indexOfId (k + "src_a")];
+    const int a = p.value ((size_t) indexOfId (k + "src_a")), b = p.value ((size_t) indexOfId (k + "src_b"));
+    juce::String t (formatValue (defA, a));
+    if (b > 0)
+        t << " " << juce::String::charToString ((juce::juce_wchar) 0x00D7) << " " << juce::String (formatValue (defA, b));
+    return t;
+}
+
+void PeakEditor::showSlots (const std::string& paramId, juce::Component& knob)
+{
+    auto bubble = std::make_unique<ModBubble> (ctx, paramId, [this] (const ui::SlotRef& r) { return slotText (r); },
+                                               [this] { showPage (2); });
+    juce::CallOutBox::launchAsynchronously (std::move (bubble), knob.getScreenBounds(), nullptr);
+}
+
+void PeakEditor::modWheel (const std::string& paramId, int steps)
+{
+    const auto values = proc.params().values();
+    const auto slots = ui::slotsFor (paramId, values);
+    const int i = indexOfId (paramId);
+    const juce::String name = i >= 0 ? juce::String (paramTable()[(size_t) i].name) : juce::String (paramId);
+    ui::SlotRef ref;
+    for (const auto& s : slots)
+        if (s == ctx.focus)
+            ref = s;
+    if (! ref.valid() && slots.size() == 1)
+        ref = slots[0];
+    if (! ref.valid())
+    {
+        if (slots.empty())
+            say (ui::modDestForParam (paramId) < 0 && ui::fxDestForParam (paramId) < 0
+                     ? name + " can't be a mod destination on the Peak."
+                     : name + " has no modulation yet. Drag a source onto it.");
+        else
+            say (juce::String ((int) slots.size()) + " slots on " + name + ": click the knob and pick one first.");
+        return;
+    }
+    const auto k = (ref.fx ? "fxmod" : "mod") + std::to_string (ref.slot) + "_";
+    const size_t di = (size_t) indexOfId (k + "depth");
+    int d = juce::jlimit (0, 127, proc.params().value (di) + steps);
+    if (d == 64)
+        d += steps > 0 ? 1 : -1;  // depth 0 would empty the slot
+    proc.params().setByUser (di, d);
+    ctx.focus = ref;
+    say (name + " " + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " " + (ref.fx ? "FX slot " : "slot ") + juce::String (ref.slot) + " "
+         + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " " + slotText (ref) + " " + juce::String::charToString ((juce::juce_wchar) 0x00B7)
+         + " depth " + (d > 64 ? "+" : "") + juce::String (d - 64));
 }
 
 void PeakEditor::sourceDropped (int modSource, const std::string& paramId)
@@ -494,12 +716,20 @@ void PeakEditor::sourceDropped (int modSource, const std::string& paramId)
         say (t.fx ? "All 4 FX mod slots are in use" : "All 16 mod slots are in use: clear one on the Matrix tab");
         return;
     }
+    if (t.existing)
+    {
+        ctx.focus = { t.fx, t.slot };
+        say ("That source already drives " + target + " (" + (t.fx ? "FX slot " : "slot ") + juce::String (t.slot)
+             + "). Selected: Alt + wheel on the knob changes its depth.");
+        return;
+    }
     const auto k = (t.fx ? "fxmod" : "mod") + std::to_string (t.slot) + "_";
     auto& prm = proc.params();
     prm.setByUser ((size_t) indexOfId (k + "src_a"), t.source);
     prm.setByUser ((size_t) indexOfId (k + "dest"), t.dest);
     prm.setByUser ((size_t) indexOfId (k + "depth"), 64 + 24);
+    ctx.focus = { t.fx, t.slot };
     const auto& srcList = paramTable()[(size_t) indexOfId (k + "src_a")].choices;
     say (juce::String (t.fx ? "FX slot " : "Slot ") + juce::String (t.slot) + ": " + juce::String (srcList[(size_t) t.source])
-         + " > " + target + ", +24");
+         + " > " + target + ", +24. Alt + wheel on the knob sets the depth.");
 }

@@ -27,6 +27,9 @@ private:
     void timerCallback() override;
     void updateModRings();
     void sourceDropped (int modSource, const std::string& paramId);
+    void showSlots (const std::string& paramId, juce::Component& knob);
+    void modWheel (const std::string& paramId, int steps);
+    juce::String slotText (const peak::ui::SlotRef&) const;
 
     PeakProcessor& proc;
     PeakLook look;
@@ -40,7 +43,8 @@ private:
     };
     std::vector<Page> pages;
     int current = 0;
-    peak::Values lastValues;  // help texts show in the top bar, not in tooltip pop-ups
+    peak::Values lastValues, lastSaved;  // help texts show in the top bar, not in tooltip pop-ups
+    peak::ui::SlotRef lastFocus;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PeakEditor)
 };

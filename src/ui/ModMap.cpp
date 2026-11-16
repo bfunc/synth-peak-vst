@@ -1,5 +1,7 @@
 #include "ModMap.h"
 
+#include <cmath>
+
 namespace peak::ui
 {
 
@@ -96,9 +98,88 @@ double modAmountFor (const std::string& id, const Values& v)
     return sum < -1 ? -1 : (sum > 1 ? 1 : sum);
 }
 
+std::vector<SlotRef> slotsFor (const std::string& id, const Values& v)
+{
+    std::vector<SlotRef> out;
+    const int d = modDestForParam (id);
+    if (d >= 0)
+        for (int s = 1; s <= 16; ++s)
+        {
+            const auto k = "mod" + std::to_string (s) + "_";
+            if (valueOf (v, k + "dest") == d && valueOf (v, k + "depth") != 64)
+                out.push_back ({ false, s });
+        }
+    const int f = fxDestForParam (id);
+    if (f >= 0)
+        for (int s = 1; s <= 4; ++s)
+        {
+            const auto k = "fxmod" + std::to_string (s) + "_";
+            if (valueOf (v, k + "dest") == f && valueOf (v, k + "depth") != 64)
+                out.push_back ({ true, s });
+        }
+    return out;
+}
+
+bool sourceBipolar (bool fx, int source)
+{
+    const auto& names = paramTable()[(size_t) indexOfId (fx ? "fxmod1_src_a" : "mod1_src_a")].choices;
+    if (source <= 0 || (size_t) source >= names.size())
+        return false;
+    const auto& n = names[(size_t) source];
+    return n.find ("+/-") != std::string::npos || n == "Keyboard" || n == "Noise";
+}
+
+ModRange slotRange (const SlotRef& r, const Values& v)
+{
+    ModRange m;
+    if (! r.valid())
+        return m;
+    const auto k = (r.fx ? "fxmod" : "mod") + std::to_string (r.slot) + "_";
+    const int a = valueOf (v, k + "src_a"), b = valueOf (v, k + "src_b");
+    const double d = (valueOf (v, k + "depth") - 64) / 64.0;
+    if (d == 0)
+        return m;
+    if (a <= 0 && b <= 0)
+        m.lo = m.hi = d;
+    else if (sourceBipolar (r.fx, a) || sourceBipolar (r.fx, b))
+        m.lo = -std::abs (d), m.hi = std::abs (d);
+    else if (d > 0)
+        m.hi = d;
+    else
+        m.lo = d;
+    return m;
+}
+
+ModRange modRangeFor (const std::string& id, const Values& v)
+{
+    ModRange m;
+    for (const auto& r : slotsFor (id, v))
+    {
+        const auto s = slotRange (r, v);
+        m.lo += s.lo;
+        m.hi += s.hi;
+    }
+    return m;
+}
+
 SlotTarget slotForDrop (int modSource, const std::string& id, const Values& v)
 {
     SlotTarget t;
+    // The same source alone already on this knob: use that slot (no duplicates).
+    for (const auto& r : slotsFor (id, v))
+    {
+        const auto k = (r.fx ? "fxmod" : "mod") + std::to_string (r.slot) + "_";
+        const int want = r.fx ? fxSourceForModSource (modSource) : modSource;
+        if (valueOf (v, k + "src_a") == want && valueOf (v, k + "src_b") == 0)
+        {
+            t.fx = r.fx;
+            t.slot = r.slot;
+            t.source = want;
+            t.dest = valueOf (v, k + "dest");
+            t.existing = true;
+            return t;
+        }
+    }
     auto empty = [&] (const std::string& k)
     {
         return valueOf (v, k + "src_a") == 0 && valueOf (v, k + "src_b") == 0 && valueOf (v, k + "depth") == 64;

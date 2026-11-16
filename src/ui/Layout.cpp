@@ -47,13 +47,22 @@ std::vector<PanelSpec> build()
                    } });
 
     v.push_back ({ "filter", "Filter",
-                   { { W::Segmented, "flt_shape", "" }, { W::Segmented, "flt_slope", "" }, { W::Segmented, "flt_env_sel", "Env Src" },
+                   { { W::Segmented, "flt_shape", "" }, { W::Segmented, "flt_slope", "" }, { W::SegmentedV, "flt_env_sel", "Env Src" },
                      { W::BigKnob, "flt_freq", "Frequency" }, { W::Knob, "flt_res", "Resonance" },
-                     { W::Knob, "flt_overdrive", "Overdrive" }, { W::Knob, "flt_postdrive", "Post Drive" },
-                     { W::Knob, "flt_keytrack", "Key Track" }, { W::Knob, "flt_ampenv", "Env Depth" },
-                     { W::Knob, "flt_modenv1", "Env Depth" }, { W::Knob, "flt_lfo1", "LFO 1" },
-                     { W::Knob, "flt_osc3", "Osc 3 Mod" }, { W::Knob, "flt_divergence", "Diverge" } },
+                     { W::Knob, "flt_keytrack", "Key Track" }, { W::SmallKnob, "flt_ampenv", "Env Depth" },
+                     { W::SmallKnob, "flt_modenv1", "Env Depth" }, { W::SmallKnob, "flt_lfo1", "LFO 1" },
+                     { W::SmallKnob, "flt_osc3", "Osc 3" } },
                    section (Section::Filter) });
+
+    // Drive stages in signal order | analogue character. Shows parameters owned by other sections.
+    v.push_back ({ "drive", "Drive",
+                   { { W::SmallKnob, "flt_overdrive", "Overdrive" }, { W::SmallKnob, "flt_postdrive", "Post Drive" },
+                     { W::SmallKnob, "dist_level", "Distortion" }, { W::SmallKnob, "osc_divergence", "Osc Div" },
+                     { W::SmallKnob, "osc_drift", "Drift" }, { W::SmallKnob, "flt_divergence", "Flt Div" } },
+                   [] (const ParamDef&) { return false; } });
+
+    // Top bar
+    v.push_back ({ "top", "Patch", { { W::SmallKnob, "patch_level", "Patch Lvl" } }, [] (const ParamDef&) { return false; } });
 
     {
         std::vector<Item> env;
@@ -71,16 +80,19 @@ std::vector<PanelSpec> build()
     }
 
     v.push_back ({ "voice", "Voice",
-                   { { W::Stepper, "voice_mode", "Mode" }, { W::Toggle, "glide_on", "Glide" },
+                   { { W::Choice, "voice_mode", "Mode" }, { W::Stepper, "kbd_octave", "Octave" }, { W::Toggle, "glide_on", "Glide" },
                      { W::SmallKnob, "unison", "Unison" }, { W::SmallKnob, "unison_detune", "Detune" },
-                     { W::SmallKnob, "spread", "Spread" }, { W::SmallKnob, "glide_time", "Glide" } },
+                     { W::SmallKnob, "spread", "Spread" }, { W::SmallKnob, "glide_time", "Glide" },
+                     { W::SmallKnob, "pre_glide", "Pre-Glide" }, { W::SmallKnob, "pan", "Pan" },
+                     { W::Choice, "spread_mode", "Spread Mode" } },
                    section (Section::Voice) });
 
     v.push_back ({ "arp", "Arp",
                    { { W::Toggle, "arp_on", "On" }, { W::Toggle, "arp_latch", "Latch" }, { W::Toggle, "arp_keysync", "Key Sync" },
                      { W::Choice, "arp_type", "" }, { W::Choice, "arp_sync", "" },
                      { W::SmallKnob, "arp_gate", "Gate" }, { W::SmallKnob, "arp_swing", "Swing" },
-                     { W::SmallKnob, "arp_octaves", "Octaves" }, { W::SmallKnob, "arp_chance", "Chance" } },
+                     { W::SmallKnob, "arp_octaves", "Octaves" }, { W::SmallKnob, "arp_chance", "Chance" },
+                     { W::Stepper, "arp_rhythm", "Rhythm" } },
                    section (Section::Arp) });
 
     // FX page
@@ -88,9 +100,8 @@ std::vector<PanelSpec> build()
                    { { W::Toggle, "fx_bypass", "Bypass" }, { W::Stepper, "fx_routing", "Routing" },
                      { W::Knob, "fx_dry", "FX Dry" }, { W::Knob, "fx_wet", "FX Wet" } },
                    [] (const ParamDef& d) { return startsWith (d.id, "fx_"); } });
-    v.push_back ({ "dist", "Distortion", { { W::Knob, "dist_level", "Level" } }, prefix ("dist_") });
     v.push_back ({ "chorus", "Chorus",
-                   { { W::Segmented, "cho_mode", "" }, { W::Segmented, "cho_type", "" }, { W::Knob, "cho_rate", "Rate" },
+                   { { W::SegmentedV, "cho_mode", "" }, { W::SegmentedV, "cho_type", "" }, { W::Knob, "cho_rate", "Rate" },
                      { W::Knob, "cho_depth", "Depth" }, { W::Knob, "cho_feedback", "Feedback" },
                      { W::Knob, "cho_lp", "Low Pass" }, { W::Knob, "cho_hp", "High Pass" }, { W::Knob, "cho_level", "Level" } },
                    prefix ("cho_") });
@@ -102,8 +113,8 @@ std::vector<PanelSpec> build()
                    prefix ("dly_") });
     v.push_back ({ "reverb", "Reverb",
                    { { W::Segmented, "rev_type", "" }, { W::Knob, "rev_time", "Time" }, { W::Knob, "rev_size", "Size" },
-                     { W::Knob, "rev_predelay", "Pre-Delay" }, { W::Knob, "rev_damp_lp", "Damp LP" },
-                     { W::Knob, "rev_damp_hp", "Damp HP" }, { W::Knob, "rev_lowpass", "Low Pass" },
+                     { W::Knob, "rev_predelay", "Pre-Delay" }, { W::Knob, "rev_mod", "Mod Depth" }, { W::Knob, "rev_mod_rate", "Mod Rate" },
+                     { W::Knob, "rev_damp_lp", "LP Damp" }, { W::Knob, "rev_damp_hp", "HP Damp" }, { W::Knob, "rev_lowpass", "Low Pass" },
                      { W::Knob, "rev_highpass", "High Pass" }, { W::Knob, "rev_level", "Level" } },
                    prefix ("rev_") });
 
@@ -129,7 +140,7 @@ std::vector<Item> oscItems (int n)
     const auto k = "osc" + std::to_string (n) + "_";
     static const char* fm[] = { "fm_3to1", "fm_1to2", "fm_2to3" };
     static const char* fmLabel[] = { "FM 3>1", "FM 1>2", "FM 2>3" };
-    return { { W::Segmented, k + "range", "Range" },
+    return { { W::SegmentedV, k + "range", "Range" },
              { W::Knob, k + "coarse", "Coarse" },
              { W::Knob, k + "fine", "Fine" },
              { W::Stepper, k + "wave", "Wave" },
@@ -141,7 +152,10 @@ std::vector<Item> oscItems (int n)
              { W::Knob, k + "env2_pitch", "Env 2" },
              { W::Knob, k + "lfo2_pitch", "LFO 2" },
              { W::Knob, k + "vsync", "V-Sync" },
-             { W::Knob, k + "saw_density", "Saw Dens" },
+             { W::Slim, k + "saw_density", "Dens" },      // in the wave cell, saw only
+             { W::Slim, k + "saw_detune", "Detune" },
+             { W::Knob, k + "fixed_note", "Fixed Note" }, // the cog pop-out
+             { W::Knob, k + "bend", "Bend" },
              { W::Knob, fm[(n - 1) % 3], fmLabel[(n - 1) % 3] } };
 }
 

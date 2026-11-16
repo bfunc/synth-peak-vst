@@ -7,6 +7,7 @@
 
 #include "plugin/ParamBridge.h"
 #include "ui/Layout.h"
+#include "ui/ModMap.h"
 
 #include <functional>
 #include <memory>
@@ -19,8 +20,29 @@ struct UiContext
     ParamBridge& params;
     // A mod source was dropped on the knob for `paramId` (rail / envelope / LFO drag handles).
     std::function<void (int modSource, const std::string& paramId)> onSourceDropped;
-    // Long-lived widgets register here so the editor can update modulation rings.
+    // Long-lived widgets register here so the editor can update modulation rings and saved marks.
     std::vector<ParamWidget*> registry;
+    // The saved patch's value of a parameter (-1: no saved patch yet).
+    std::function<int (int index)> savedValue;
+    // The mod slot picked last (dropped, or chosen in a knob's slot list): Alt + wheel sets its depth.
+    peak::ui::SlotRef focus;
+    // A plain click on a modulated knob: show its slots. Alt + wheel on a knob: change a slot's depth.
+    std::function<void (const std::string& paramId, juce::Component& knob)> onModClick;
+    std::function<void (const std::string& paramId, int steps)> onModWheel;
+};
+
+// What a knob's orange ring shows, in knob ranges (1 = the whole knob): the reach of all slots aimed at it, and the
+// selected slot alone when it is one of them.
+struct ModInfo
+{
+    double lo = 0, hi = 0;
+    bool focus = false;
+    double flo = 0, fhi = 0;
+    bool any() const { return lo != 0 || hi != 0; }
+    bool operator== (const ModInfo& o) const
+    {
+        return lo == o.lo && hi == o.hi && focus == o.focus && flo == o.flo && fhi == o.fhi;
+    }
 };
 
 // Base: knows its table index and draws nothing special.
@@ -30,11 +52,37 @@ public:
     ParamWidget (UiContext& ctx, const std::string& id);
     int index() const { return idx; }
     const peak::ParamDef& def() const;
-    virtual void setModAmount (double) {}  // knobs show it as an orange ring
+    virtual void setModInfo (const ModInfo&) {}  // knobs show it as an orange ring
+    virtual void setSaved (int) {}                // knobs mark the saved value (-1: none)
 
 protected:
     UiContext& ctx;
     int idx;
+};
+
+// The rotary slider of a knob: Alt + wheel goes to the editor (mod depth) instead of turning the knob.
+class KnobSlider : public juce::Slider
+{
+public:
+    std::function<bool (int steps)> altWheel;
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+    {
+        if (e.mods.isAltDown() && altWheel)
+        {
+            acc += w.deltaY != 0 ? w.deltaY : w.deltaX;
+            const int steps = (int) (acc / 0.08f);
+            if (steps != 0)
+            {
+                acc -= (float) steps * 0.08f;
+                altWheel (steps);
+            }
+            return;
+        }
+        juce::Slider::mouseWheelMove (e, w);
+    }
+
+private:
+    float acc = 0;
 };
 
 class ParamKnob : public ParamWidget, public juce::DragAndDropTarget
@@ -42,9 +90,13 @@ class ParamKnob : public ParamWidget, public juce::DragAndDropTarget
 public:
     enum class Size { Small, Normal, Big };
     ParamKnob (UiContext&, const std::string& id, const juce::String& label, Size);
+    ~ParamKnob() override;
     void resized() override;
     void paint (juce::Graphics&) override;
-    void setModAmount (double) override;
+    void setModInfo (const ModInfo&) override;
+    void setSaved (int) override;
+    void mouseUp (const juce::MouseEvent&) override;            // from the slider: a plain click shows the slots
+    void mouseDoubleClick (const juce::MouseEvent&) override;   // from the slider
 
     bool isInterestedInDragSource (const SourceDetails&) override;
     void itemDragEnter (const SourceDetails&) override;
@@ -57,8 +109,11 @@ public:
     static int preferredHeight (Size s) { return s == Size::Big ? 104 : (s == Size::Small ? 70 : 80); }
 
 private:
-    juce::Slider slider;
+    KnobSlider slider;
     std::unique_ptr<juce::SliderParameterAttachment> attachment;
+    ModInfo mod;
+    int saved = -1;
+    int clickToken = 0;
     juce::String label;
     Size size;
     bool dropHover = false;
@@ -111,6 +166,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;  // click on the name: a menu of all values
+    void setCaption (const juce::String& c) { caption = c; repaint(); }
 
 private:
     void stepBy (int);
@@ -169,10 +225,12 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
 private:
     void setFromX (int x);
     std::unique_ptr<juce::ParameterAttachment> attachment;
+    float wheelAcc = 0;
 };
 
 // A thin horizontal slider: LABEL ━━━━━ value. Click or drag along it, wheel to step; double-click resets.

@@ -12,6 +12,23 @@ void knobIn (juce::Component* c, juce::Rectangle<int> cell)
     if (c != nullptr)
         c->setBounds (cell.withSizeKeepingCentre (juce::jmin (cell.getWidth(), 64), juce::jmin (cell.getHeight(), 82)));
 }
+
+void lineCaption (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> r)
+{
+    const auto f = theme::fontUi (9.5f).withExtraKerningFactor (0.1f);
+    const int tw = (int) juce::GlyphArrangement::getStringWidth (f, text.toUpperCase()) + 12;
+    g.setColour (theme::edgeHi);
+    g.drawHorizontalLine (r.getCentreY(), (float) r.getX(), (float) (r.getCentreX() - tw / 2));
+    g.drawHorizontalLine (r.getCentreY(), (float) (r.getCentreX() + tw / 2), (float) r.getRight());
+    g.setFont (f);
+    g.setColour (theme::ink3);
+    g.drawText (text.toUpperCase(), r, juce::Justification::centred);
+}
+
+// FX Routing values in the manual's order (to confirm on the synth).
+const char* kRoutes[] = { "Parallel", "D > R > C", "D > C > R", "R > D > C", "R > C > D", "C > D > R", "C > R > D" };
+const char* kRouteOrder[][3] = { { "", "", "" }, { "DEL", "REV", "CHO" }, { "DEL", "CHO", "REV" }, { "REV", "DEL", "CHO" },
+                                 { "REV", "CHO", "DEL" }, { "CHO", "DEL", "REV" }, { "CHO", "REV", "DEL" } };
 } // namespace
 
 // ---- FxRow ----
@@ -40,68 +57,226 @@ void FxRow::refresh()
 
 void FxRow::paint (juce::Graphics& g)
 {
-    using namespace theme;
-    auto r = getLocalBounds();
-    g.setColour (panel);
-    g.fillRect (r);
-    g.setColour (accent);
-    g.fillRect (r.removeFromTop (2));
-    auto tab = r.removeFromLeft (118);
-    g.setColour (panelHi);
-    g.fillRect (tab);
-    g.setColour (juce::Colours::black);
-    g.drawVerticalLine (tab.getRight(), (float) tab.getY(), (float) tab.getBottom());
-    g.setColour (ink);
-    g.setFont (fontUi (13.0f));
-    g.drawText (title.toUpperCase(), tab.reduced (12, 0), juce::Justification::centredLeft);
+    PanelFrame::paint (g);
+    g.setColour (theme::led);
+    const float tw = juce::GlyphArrangement::getStringWidth (theme::fontUi (12.0f).withExtraKerningFactor (0.1f), title.toUpperCase());
+    g.fillEllipse (8 + tw + 8, 2 + kTitleH / 2.0f - 3.5f, 7, 7);
+    for (const auto& gr : groups)
+        lineCaption (g, gr.first, gr.second);
+}
+
+juce::Rectangle<int> FxRow::span (juce::Rectangle<int> grid, int from, int to)
+{
+    constexpr int gap = 6;
+    const float cw = (grid.getWidth() - 9 * gap) / 10.0f;
+    const int x0 = grid.getX() + (int) ((from - 1) * (cw + gap));
+    const int x1 = grid.getX() + (int) ((to - 1) * (cw + gap) - gap);
+    return { x0, grid.getY(), x1 - x0, grid.getHeight() };
 }
 
 void FxRow::resized()
 {
     PanelFrame::resized();
-    auto r = getLocalBounds().withTrimmedTop (2);
-    r.removeFromLeft (118 + 12);
-    graph.setBounds (r.removeFromLeft (120).reduced (0, 10));
-    r.removeFromLeft (12);
-    r.removeFromRight (24);
-    // Choice-type widgets in a column first, then the knobs.
-    std::vector<juce::Component*> knobs;
-    auto opts = juce::Rectangle<int>();
-    for (const auto& it : ui::panel (key)->items)
+    auto r = content().reduced (16, 10);
+    graph.setBounds (r.removeFromLeft (220));
+    r.removeFromLeft (24);
+    auto grid = r.withSizeKeepingCentre (r.getWidth(), juce::jmin (r.getHeight(), 104));
+    groups.clear();
+    auto group = [&] (const char* caption, int from, int to, std::vector<juce::Component*> items)
     {
-        auto* c = w.get (it.id);
-        if (c == nullptr)
-            continue;
-        if (dynamic_cast<ParamKnob*> (c) != nullptr)
+        auto a = span (grid, from, to);
+        groups.push_back ({ caption, a.removeFromTop (14) });
+        a.removeFromTop (4);
+        const int n = (int) items.size();
+        for (int i = 0; i < n; ++i)
         {
-            if (! (key == "delay" && it.id == "dly_sync_time"))
-                knobs.push_back (c);
+            auto cell = a.removeFromLeft (a.getWidth() / (n - i));
+            auto* c = items[(size_t) i];
+            if (dynamic_cast<ParamKnob*> (c) != nullptr)
+                knobIn (c, cell);
+            else if (c != nullptr)
+                c->setBounds (cell.withSizeKeepingCentre (juce::jmin (cell.getWidth() - 6, 100), juce::jmin (cell.getHeight(), 66)));
         }
-        else
-        {
-            if (opts.isEmpty())
-                opts = r.removeFromLeft (124).reduced (0, 8);
-            c->setBounds (opts.removeFromTop (26).reduced (0, 2));
-        }
+    };
+    auto wg = [this] (const char* id) { return (juce::Component*) w.get (id); };
+    if (key == "chorus")
+    {
+        group ("Modulation", 1, 4, { wg ("cho_rate"), wg ("cho_depth"), wg ("cho_feedback") });
+        group ("Mode / Type", 4, 8, { wg ("cho_mode"), wg ("cho_type") });
+        group ("Tone", 8, 10, { wg ("cho_lp"), wg ("cho_hp") });
+        group ("Output", 10, 11, { wg ("cho_level") });
     }
-    const int cell = juce::jmin (68, r.getWidth() / juce::jmax (1, (int) knobs.size()));
-    for (auto* k : knobs)
-        knobIn (k, r.removeFromLeft (cell));
-    if (key == "delay")
+    else if (key == "delay")
+    {
+        auto head = juce::Rectangle<int> (getWidth() - 28 - 70, 4, 70, 18);
+        if (auto* s = w.get ("dly_sync"))
+            s->setBounds (head);
+        if (auto* m = w.get ("dly_time_mode"))
+            m->setBounds (head.getX() - 8 - 110, 3, 110, 20);
+        group ("Time", 1, 4, { wg ("dly_time"), wg ("dly_feedback"), wg ("dly_slew") });
         if (auto* t = w.get ("dly_time"))
             w["dly_sync_time"].setBounds (t->getBounds());
+        group ("Stereo", 4, 6, { wg ("dly_width") });
+        group ("Damping", 6, 8, { wg ("dly_lp_damp"), wg ("dly_hp_damp") });
+        group ("Output", 10, 11, { wg ("dly_level") });
+    }
+    else if (key == "reverb")
+    {
+        if (auto* t = w.get ("rev_type"))
+            t->setBounds (getWidth() - 28 - 96, 4, 96, 18);
+        group ("Space", 1, 4, { wg ("rev_time"), wg ("rev_size"), wg ("rev_predelay") });
+        group ("Movement", 4, 6, { wg ("rev_mod"), wg ("rev_mod_rate") });
+        group ("Damping", 6, 8, { wg ("rev_damp_lp"), wg ("rev_damp_hp") });
+        group ("EQ", 8, 10, { wg ("rev_lowpass"), wg ("rev_highpass") });
+        group ("Output", 10, 11, { wg ("rev_level") });
+    }
 }
 
-// ---- FxPage ----
+// ---- RoutingView ----
 
-FxPage::FxPage (UiContext& c) : top (c, {}, "fx"), w (c)
+RoutingView::RoutingView (UiContext& c) : ctx (c), idx (indexOfId ("fx_routing"))
 {
-    addAndMakeVisible (top);
-    w.add (top, ui::panel ("fx")->items);
-    rows[0] = std::make_unique<FxRow> (c, "dist", "Distortion", FxGraph::Type::Distortion);
-    rows[1] = std::make_unique<FxRow> (c, "chorus", "Chorus", FxGraph::Type::Chorus);
-    rows[2] = std::make_unique<FxRow> (c, "delay", "Delay", FxGraph::Type::Delay);
-    rows[3] = std::make_unique<FxRow> (c, "reverb", "Reverb", FxGraph::Type::Reverb);
+    for (auto* b : { &prev, &next })
+        addAndMakeVisible (b);
+    prev.onClick = [this] { setValue (value() - 1); };
+    next.onClick = [this] { setValue (value() + 1); };
+    att = std::make_unique<juce::ParameterAttachment> (*ctx.params.parameter ((size_t) idx), [this] (float) { repaint(); });
+    setTooltip (juce::String::fromUTF8 ("Routing: chorus, delay and reverb in parallel, or in series in any order. Delay before reverb gives each echo its own reverb tail."));
+}
+
+int RoutingView::value() const { return ctx.params.value ((size_t) idx); }
+
+void RoutingView::setValue (int v)
+{
+    const auto& p = paramTable()[(size_t) idx];
+    const int n = p.max - p.min + 1;
+    v = ((v - p.min) % n + n) % n + p.min;
+    att->setValueAsCompleteGesture ((float) v);
+}
+
+void RoutingView::resized()
+{
+    prev.setBounds (0, 16, 22, 24);
+    next.setBounds (getWidth() - 22, 16, 22, 24);
+}
+
+void RoutingView::mouseUp (const juce::MouseEvent& e)
+{
+    if (! juce::Rectangle<int> (22, 16, getWidth() - 44, 24).contains (e.getPosition()))
+        return;
+    juce::PopupMenu m;
+    for (int i = 0; i < 7; ++i)
+        m.addItem (i + 1, kRoutes[i], true, value() == i);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [this] (int r)
+    {
+        if (r > 0)
+            setValue (r - 1);
+    });
+}
+
+void RoutingView::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    const int v = juce::jlimit (0, 6, value());
+    g.setFont (fontUi (9.5f).withExtraKerningFactor (0.1f));
+    g.setColour (ink3);
+    g.drawText ("ROUTING", 0, 0, getWidth(), 14, juce::Justification::centredLeft);
+    auto name = juce::Rectangle<int> (22, 16, getWidth() - 44, 24);
+    g.setColour (well);
+    g.fillRect (name);
+    g.setColour (juce::Colours::black);
+    g.drawRect (name);
+    g.setColour (ink);
+    g.setFont (fontUi (12.5f));
+    g.drawText (kRoutes[v], name, juce::Justification::centred);
+
+    // Flow picture, top to bottom.
+    auto box = getLocalBounds().withTrimmedTop (50).toFloat();
+    g.setColour (well);
+    g.fillRoundedRectangle (box, 2.0f);
+    g.setColour (juce::Colours::black);
+    g.drawRoundedRectangle (box.reduced (0.5f), 2.0f, 1.0f);
+    const auto wire = ink3;
+    auto node = [&] (juce::Rectangle<float> r, const char* text, bool fx)
+    {
+        g.setColour (panelHi);
+        g.fillRoundedRectangle (r, 2.0f);
+        g.setColour (fx ? accent : edgeHi);
+        g.drawRoundedRectangle (r, 2.0f, 1.0f);
+        g.setColour (fx ? ink : ink2);
+        g.setFont (fontUi (10.0f).withExtraKerningFactor (0.08f));
+        g.drawText (text, r, juce::Justification::centred);
+    };
+    const float cx = box.getCentreX(), nw = 46, nh = 20;
+    const float top = box.getCentreY() - (v == 0 ? 74 : 112);
+    auto at = [&] (float y) { return juce::Rectangle<float> (cx - nw / 2, y, nw, nh); };
+    g.setColour (wire);
+    if (v == 0)
+    {
+        auto in = at (top), out = at (top + 128);
+        const float y1 = top + nh + 22, y2 = y1 + 16 + nh + 16;
+        g.drawVerticalLine ((int) cx, in.getBottom(), y1);
+        g.drawHorizontalLine ((int) y1, cx - 56, cx + 56);
+        g.drawHorizontalLine ((int) y2, cx - 56, cx + 56);
+        g.drawVerticalLine ((int) cx, y2, out.getY());
+        const char* names[] = { "CHO", "DEL", "REV" };
+        for (int i = 0; i < 3; ++i)
+        {
+            const float x = cx + (i - 1) * 56.0f;
+            g.setColour (wire);
+            g.drawVerticalLine ((int) x, y1, y2);
+            node ({ x - 24, y1 + 16, 48, nh }, names[i], true);
+        }
+        node (in, "IN", false);
+        node (out, "OUT", false);
+    }
+    else
+    {
+        float y = top;
+        g.drawVerticalLine ((int) cx, top + nh, top + 4 * 46.0f);
+        node (at (y), "IN", false);
+        for (int i = 0; i < 3; ++i)
+        {
+            y += 46;
+            node (at (y), kRouteOrder[v][i], true);
+        }
+        node (at (y + 46), "OUT", false);
+    }
+}
+
+// ---- FxGlobal / FxPage ----
+
+FxGlobal::FxGlobal (UiContext& c) : PanelFrame (c, "FX Global", "fx"), w (c), routing (c)
+{
+    std::vector<ui::Item> items;
+    for (const auto& it : ui::panel ("fx")->items)
+        if (it.id != "fx_routing")
+            items.push_back (it);
+    w.add (*this, items);
+    addAndMakeVisible (routing);
+}
+
+void FxGlobal::paint (juce::Graphics& g) { PanelFrame::paint (g); }
+
+void FxGlobal::resized()
+{
+    PanelFrame::resized();
+    if (auto* b = w.get ("fx_bypass"))
+        b->setBounds (getWidth() - 28 - 76, 4, 76, 18);
+    auto r = content().reduced (12, 10);
+    auto dw = r.removeFromBottom (84);
+    knobIn (w.get ("fx_dry"), dw.removeFromLeft (dw.getWidth() / 2));
+    knobIn (w.get ("fx_wet"), dw);
+    r.removeFromBottom (10);
+    routing.setBounds (r);
+}
+
+FxPage::FxPage (UiContext& c) : global (c)
+{
+    addAndMakeVisible (global);
+    rows[0] = std::make_unique<FxRow> (c, "chorus", "Chorus", FxGraph::Type::Chorus);
+    rows[1] = std::make_unique<FxRow> (c, "delay", "Delay", FxGraph::Type::Delay);
+    rows[2] = std::make_unique<FxRow> (c, "reverb", "Reverb", FxGraph::Type::Reverb);
     for (auto& r : rows)
         addAndMakeVisible (*r);
 }
@@ -114,20 +289,14 @@ void FxPage::refresh()
 
 void FxPage::resized()
 {
+    // The mock: FX Global (232) | a rack of three equal rows.
     auto r = getLocalBounds();
-    top.setBounds (r.removeFromTop (88));
-    auto t = top.getLocalBounds().reduced (14, 8);
-    w["fx_bypass"].setBounds (t.removeFromLeft (90).withSizeKeepingCentre (90, 24));
-    t.removeFromLeft (20);
-    w["fx_routing"].setBounds (t.removeFromLeft (190).withSizeKeepingCentre (190, 24));
-    auto dw = t.removeFromRight (140);
-    knobIn (&w["fx_dry"], dw.removeFromLeft (70));
-    knobIn (&w["fx_wet"], dw);
-    r.removeFromTop (8);
-    const int heights[] = { 100, 130, 140, 140 };
+    global.setBounds (r.removeFromLeft (232));
+    r.removeFromLeft (8);
+    const int h = (r.getHeight() - 16) / 3;
     for (size_t i = 0; i < rows.size(); ++i)
     {
-        rows[i]->setBounds (r.removeFromTop (heights[i]));
+        rows[i]->setBounds (i == 2 ? r : r.removeFromTop (h));
         r.removeFromTop (8);
     }
 }
