@@ -1,6 +1,7 @@
 #include "Widgets.h"
 
 #include "Theme.h"
+#include "ui/Help.h"
 
 using namespace peak;
 
@@ -37,6 +38,8 @@ ParamWidget::ParamWidget (UiContext& c, const std::string& id) : ctx (c), idx (i
 {
     jassert (idx >= 0);  // the layout tests catch unknown ids
     setTitle (idx >= 0 ? juce::String (def().name) : juce::String (id));
+    const auto help = ui::helpFor (id);
+    setTooltip (help.empty() ? getTitle() : juce::String::fromUTF8 (help.c_str()));
 }
 
 const ParamDef& ParamWidget::def() const { return paramTable()[(size_t) juce::jmax (0, idx)]; }
@@ -62,7 +65,7 @@ ParamKnob::ParamKnob (UiContext& c, const std::string& id, const juce::String& l
         slider.setDoubleClickReturnValue (true, plainFromTable (def(), def().def));
     }
     slider.onValueChange = [this] { repaint(); };
-    slider.setTooltip (juce::String (def().name));
+    slider.setTooltip (getTooltip());
 }
 
 void ParamKnob::resized()
@@ -85,9 +88,12 @@ void ParamKnob::paint (juce::Graphics& g)
     r.removeFromTop (slider.getBottom());
     const bool hot = slider.isMouseOverOrDragging();
     const bool modded = std::abs ((double) slider.getProperties().getWithDefault ("mod", 0.0)) > 0.001;
-    g.setFont (fontMono (10.5f));
-    g.setColour (hot ? accent : ink2);
-    g.drawText (slider.getTextFromValue (slider.getValue()), r.removeFromTop (13), juce::Justification::centred);
+    if (showValue)
+    {
+        g.setFont (fontMono (10.5f));
+        g.setColour (hot ? accent : ink2);
+        g.drawText (slider.getTextFromValue (slider.getValue()), r.removeFromTop (13), juce::Justification::centred);
+    }
     g.setFont (fontUi (10.5f));
     g.setColour (modded ? led : (hot ? ink : ink3));
     g.drawFittedText (label.toUpperCase(), r.removeFromTop (14), juce::Justification::centred, 1, 0.8f);
@@ -366,6 +372,92 @@ void ParamBar::mouseDoubleClick (const juce::MouseEvent&)
 
 // ---------------------------------------------------------------------------------------------------------------
 
+ParamSlim::ParamSlim (UiContext& c, const std::string& id, const juce::String& l) : ParamWidget (c, id), label (l)
+{
+    if (auto* prm = ctx.params.parameter ((size_t) idx))
+    {
+        attachment = std::make_unique<juce::ParameterAttachment> (*prm, [this] (float) { repaint(); });
+        attachment->sendInitialUpdate();
+    }
+    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+}
+
+juce::Rectangle<int> ParamSlim::track() const
+{
+    auto r = getLocalBounds();
+    r.removeFromLeft (40);
+    r.removeFromRight (26);
+    return r.withSizeKeepingCentre (r.getWidth(), 5);
+}
+
+void ParamSlim::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    const auto& p = def();
+    const int v = ctx.params.value ((size_t) idx);
+    auto r = getLocalBounds();
+    const bool hot = isMouseOverOrDragging();
+    g.setFont (fontUi (9.0f));
+    g.setColour (dim ? ink3.withAlpha (0.6f) : (hot ? ink : ink3));
+    g.drawText (label.toUpperCase(), r.removeFromLeft (40), juce::Justification::centredLeft);
+    g.setFont (fontMono (9.5f));
+    g.setColour (dim ? ink3.withAlpha (0.6f) : ink2);
+    g.drawText (juce::String (formatValue (p, v)), r.removeFromRight (24), juce::Justification::centredRight);
+    auto t = track().toFloat();
+    g.setColour (well);
+    g.fillRoundedRectangle (t, 2.0f);
+    g.setColour (juce::Colours::black);
+    g.drawRoundedRectangle (t, 2.0f, 1.0f);
+    const float frac = (float) (v - p.min) / (float) juce::jmax (1, p.max - p.min);
+    g.setColour (dim ? ink3 : accent);
+    g.fillRoundedRectangle (t.withWidth (t.getWidth() * frac), 2.0f);
+}
+
+void ParamSlim::setFromX (int x)
+{
+    const auto& p = def();
+    const auto t = track();
+    const float frac = juce::jlimit (0.0f, 1.0f, (float) (x - t.getX()) / (float) juce::jmax (1, t.getWidth()));
+    if (attachment)
+        attachment->setValueAsPartOfGesture (plainFromTable (p, (int) std::lround (p.min + frac * (p.max - p.min))));
+}
+
+void ParamSlim::mouseDown (const juce::MouseEvent& e)
+{
+    if (attachment)
+        attachment->beginGesture();
+    setFromX (e.x);
+}
+
+void ParamSlim::mouseDrag (const juce::MouseEvent& e) { setFromX (e.x); }
+
+void ParamSlim::mouseUp (const juce::MouseEvent&)
+{
+    if (attachment)
+        attachment->endGesture();
+}
+
+void ParamSlim::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (attachment)
+        attachment->setValueAsCompleteGesture (plainFromTable (def(), def().def));
+}
+
+void ParamSlim::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    wheelAcc += w.deltaY;
+    const int steps = (int) (wheelAcc / 0.1f);
+    if (steps == 0)
+        return;
+    wheelAcc -= steps * 0.1f;
+    const auto& p = def();
+    const int v = juce::jlimit (p.min, p.max, ctx.params.value ((size_t) idx) + steps * (e.mods.isShiftDown() ? 1 : 2));
+    if (attachment)
+        attachment->setValueAsCompleteGesture (plainFromTable (p, v));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+
 std::unique_ptr<ParamWidget> makeWidget (UiContext& ctx, const ui::Item& it)
 {
     using W = ui::Widget;
@@ -380,6 +472,7 @@ std::unique_ptr<ParamWidget> makeWidget (UiContext& ctx, const ui::Item& it)
         case W::Toggle: return std::make_unique<ParamToggle> (ctx, it.id, label);
         case W::Choice: return std::make_unique<ParamChoice> (ctx, it.id);
         case W::Stepper: return std::make_unique<ParamStepper> (ctx, it.id, label);
+        case W::Slim: return std::make_unique<ParamSlim> (ctx, it.id, label);
     }
     return nullptr;
 }

@@ -40,8 +40,7 @@ private:
     };
     std::vector<Page> pages;
     int current = 0;
-    peak::Values lastValues;
-    juce::TooltipWindow tooltips { this, 600 };
+    peak::Values lastValues;  // help texts show in the top bar, not in tooltip pop-ups
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PeakEditor)
 };

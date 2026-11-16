@@ -5,7 +5,7 @@ For Novation Peak; not affiliated with or endorsed by Novation / Focusrite.
 
 Status: **first full build, not yet tested on the synth** (see [docs/HARDWARE-TEST.md](docs/HARDWARE-TEST.md)).
 Plan: [docs/PLAN.md](docs/PLAN.md) · research: [docs/RESEARCH.md](docs/RESEARCH.md) ·
-code layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · UI preview: [docs/panel-mockup.html](docs/panel-mockup.html).
+code layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## What it does
 

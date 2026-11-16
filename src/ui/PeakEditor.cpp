@@ -119,33 +119,38 @@ private:
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Top bar
+// Top bar: logo | page tabs | help display | ‹ patch › | Fetch Send Compare Save | Patch Level.
+// The help display shows the help of the control under the mouse, short messages, or the connection when idle.
 
 class TopBar : public juce::Component, public Refreshable
 {
 public:
-    TopBar (PeakProcessor& p, const juce::StringArray& pageNames, std::function<void (int)> onPage)
+    TopBar (PeakProcessor& p, UiContext& c, const juce::StringArray& pageNames, std::function<void (int)> onPage)
         : proc (p), names (pageNames), pageChanged (std::move (onPage))
     {
         prev.onClick = [this] { proc.session().step (-1); };
         next.onClick = [this] { proc.session().step (1); };
-        prev.setTooltip ("Previous patch (program change)");
-        next.setTooltip ("Next patch (program change)");
-        fetch.setTooltip ("Read the Peak's current patch");
-        send.setTooltip ("Write this patch into the Peak's edit buffer (not its memory)");
-        saveBtn.setTooltip ("Save into a slot, or to a file");
+        prev.setTooltip ("Previous patch in the bank (sends Program Change).");
+        next.setTooltip ("Next patch in the bank (sends Program Change).");
+        fetch.setTooltip ("Fetch: read the Peak's edit buffer into the editor.");
+        send.setTooltip ("Send: write this patch to the Peak's edit buffer (not its memory), read it back and report whether the Peak took it.");
+        saveBtn.setTooltip ("Save: pick a slot, back up what is there, then write the patch. Or save to a .syx file.");
         fetch.onClick = [this] { proc.session().fetch(); };
         send.onClick = [this] { proc.session().sendAll(); };
         saveBtn.onClick = [this]
         {
             juce::CallOutBox::launchAsynchronously (std::make_unique<SavePanel> (proc), saveBtn.getScreenBounds(), nullptr);
         };
-        compare.setTooltip ("Hold to hear the saved patch; release to go back to your edit");
+        compare.setTooltip ("Compare: hold to hear the saved patch, release to go back to your edit.");
         compare.onPress = [this] { proc.beginCompare(); repaint(); };
         compare.onRelease = [this] { proc.endCompare(); repaint(); };
-        for (juce::Component* c : { (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &fetch,
-                                    (juce::Component*) &send, (juce::Component*) &saveBtn, (juce::Component*) &compare })
-            addAndMakeVisible (c);
+        level = makeWidget (c, { ui::Widget::SmallKnob, "patch_level", "Patch Lvl" });
+        if (auto* k = dynamic_cast<ParamKnob*> (level.get()))
+            k->setShowValue (false);
+        for (juce::Component* comp : { (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &fetch,
+                                       (juce::Component*) &send, (juce::Component*) &saveBtn, (juce::Component*) &compare,
+                                       (juce::Component*) level.get() })
+            addAndMakeVisible (comp);
     }
 
     void setPage (int p)
@@ -156,8 +161,8 @@ public:
     void say (const juce::String& m)
     {
         message = m;
-        messageUntil = juce::Time::getMillisecondCounterHiRes() + 6000;
-        repaint();
+        messageUntil = juce::Time::getMillisecondCounterHiRes() + 4000;
+        repaint (helpRect());
     }
 
     void refresh() override
@@ -179,6 +184,22 @@ public:
             else if (s1.isNotEmpty())
                 say (s1);
             lastLib = s2;
+        }
+        // Help of the control under the mouse (the nearest tooltip client with text, inside this editor).
+        juce::String h;
+        if (auto* under = juce::Desktop::getInstance().getMainMouseSource().getComponentUnderMouse())
+            if (auto* ed = getParentComponent(); ed != nullptr && ed->isParentOf (under))
+                for (auto* c = under; c != nullptr && c != ed; c = c->getParentComponent())
+                    if (auto* tc = dynamic_cast<juce::TooltipClient*> (c))
+                        if (auto t = tc->getTooltip(); t.isNotEmpty())
+                        {
+                            h = t;
+                            break;
+                        }
+        if (h != hover)
+        {
+            hover = h;
+            repaint (helpRect());
         }
         if (key != lastKey || (messageUntil > 0 && juce::Time::getMillisecondCounterHiRes() > messageUntil))
         {
@@ -205,16 +226,16 @@ public:
     void resized() override
     {
         auto o = oledRect();
-        prev.setBounds (o.getX() - 24, o.getY(), 22, o.getHeight());
-        next.setBounds (o.getRight() + 2, o.getY(), 22, o.getHeight());
-        auto a = juce::Rectangle<int> (next.getRight() + 12, 15, 312, 26);
-        fetch.setBounds (a.removeFromLeft (70));
-        a.removeFromLeft (6);
-        send.setBounds (a.removeFromLeft (64));
-        a.removeFromLeft (6);
-        saveBtn.setBounds (a.removeFromLeft (64));
-        a.removeFromLeft (6);
-        compare.setBounds (a.removeFromLeft (84));
+        prev.setBounds (o.getX() - 22, o.getY(), 22, o.getHeight());
+        next.setBounds (o.getRight(), o.getY(), 22, o.getHeight());
+        auto a = juce::Rectangle<int> (next.getRight() + 14, 15, 274, 26);
+        for (juce::Component* b : { (juce::Component*) &fetch, (juce::Component*) &send, (juce::Component*) &compare, (juce::Component*) &saveBtn })
+        {
+            b->setBounds (a.removeFromLeft (64));
+            a.removeFromLeft (6);
+        }
+        if (level != nullptr)
+            level->setBounds (getWidth() - 22 - 46, 2, 46, 54);
     }
 
     void paint (juce::Graphics& g) override
@@ -225,23 +246,16 @@ public:
         g.setColour (juce::Colours::black);
         g.drawHorizontalLine (getHeight() - 1, 0, (float) getWidth());
 
-        // Brand
+        // Logo: a mountain line (small peak, valley, tall peak) in a 26 px box.
         juce::Path logo;
-        logo.startNewSubPath (24, 41);
-        logo.lineTo (31, 28);
-        logo.lineTo (35, 34);
-        logo.lineTo (39, 25);
-        logo.lineTo (46, 41);
+        const float lx = 22, ly = 15;
+        logo.startNewSubPath (lx + 2, ly + 22);
+        logo.lineTo (lx + 7, ly + 10);
+        logo.lineTo (lx + 10, ly + 14.5f);
+        logo.lineTo (lx + 14, ly + 3);
+        logo.lineTo (lx + 24, ly + 22);
         g.setColour (accent);
-        g.strokePath (logo, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.setColour (led);
-        g.fillEllipse (37, 23, 4, 4);
-        g.setColour (ink);
-        g.setFont (fontUi (17.0f).withExtraKerningFactor (0.14f));
-        g.drawText ("PEAK", 54, 0, 60, getHeight(), juce::Justification::centredLeft);
-        g.setColour (ink3);
-        g.setFont (fontUi (11.0f, false).withExtraKerningFactor (0.2f));
-        g.drawText ("CONTROL", 104, 0, 70, getHeight(), juce::Justification::centredLeft);
+        g.strokePath (logo, juce::PathStrokeType (2.2f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
 
         // Tabs
         for (int i = 0; i < names.size(); ++i)
@@ -252,12 +266,16 @@ public:
             g.fillRect (t);
             g.setColour (juce::Colours::black);
             g.drawVerticalLine (t.getX(), 0, (float) getHeight());
+            if (i == names.size() - 1)
+                g.drawVerticalLine (t.getRight(), 0, (float) getHeight());
             g.setColour (on ? accent : juce::Colour (0xff2a3038));
             g.fillEllipse ((float) t.getCentreX() - 2.5f, 16, 5, 5);
             g.setColour (on ? ink : ink3);
-            g.setFont (fontUi (12.0f).withExtraKerningFactor (0.12f));
+            g.setFont (fontUi (12.0f).withExtraKerningFactor (0.06f));
             g.drawText (names[i].toUpperCase(), t.withTrimmedTop (16), juce::Justification::centred);
         }
+
+        paintHelp (g);
 
         // Patch display
         auto o = oledRect();
@@ -266,13 +284,12 @@ public:
         g.setColour (juce::Colours::black);
         g.drawRect (o);
         auto in = o.reduced (10, 4);
-        const bool showMsg = messageUntil > 0;
         const auto cat = categoryText();
-        g.setFont (fontMono (10.0f));
-        g.setColour (showMsg ? led.withAlpha (0.9f) : ink3);
+        g.setFont (fontMono (9.5f));
+        g.setColour (proc.comparing() ? led : ink3);
         g.drawText (proc.comparing() ? juce::String ("HEARING THE SAVED PATCH")
-                    : showMsg ? message : (juce::String (proc.session().originText()).toUpperCase() + (cat.isNotEmpty() ? "  " + cat : "")),
-                    in.removeFromTop (13), juce::Justification::centredLeft);
+                                     : juce::String (proc.session().originText()).toUpperCase() + (cat.isNotEmpty() ? "  " + cat : ""),
+                    in.removeFromTop (13), juce::Justification::centredLeft, true);
         g.setFont (fontMono (15.0f));
         g.setColour (accent);
         const auto name = juce::String (proc.session().name());
@@ -285,25 +302,57 @@ public:
             g.setFont (fontMono (12.0f));
             g.drawText ("* " + juce::String (edited), in.withTrimmedLeft ((int) nameW + 8), juce::Justification::centredLeft);
         }
-
-        // Connection
-        const auto st = proc.link().status (proc.midiChannel());
-        const bool ok = (st.hostOutput || st.outOpen) && st.inOpen;
-        auto c = juce::Rectangle<int> (compare.getRight() + 16, 0, getWidth() - compare.getRight() - 24, getHeight());
-        g.setColour (ok ? accent : juce::Colour (0xff3a2a1f));
-        g.fillEllipse ((float) c.getX(), (float) c.getCentreY() - 3.5f, 7, 7);
-        g.setColour (ink2);
-        g.setFont (fontUi (11.5f, false));
-        juce::String t = ok ? "PEAK" : "OFFLINE";
-        t << " " << juce::String::charToString ((juce::juce_wchar) 0x00B7) << " CH " << proc.midiChannel();
-        if (st.hostOutput)
-            t << " DAW";
-        g.drawText (t, c.withTrimmedLeft (14), juce::Justification::centredLeft);
     }
 
 private:
-    juce::Rectangle<int> tabRect (int i) const { return { 176 + i * 88, 0, 88, getHeight() - 1 }; }
-    juce::Rectangle<int> oledRect() const { return { 176 + names.size() * 88 + 34, 8, 222, 40 }; }
+    juce::Rectangle<int> tabRect (int i) const { return { 62 + i * 62, 0, 62, getHeight() - 1 }; }
+    juce::Rectangle<int> helpRect() const { return { tabRect (names.size() - 1).getRight() + 14, 8, 286, 40 }; }
+    juce::Rectangle<int> oledRect() const { return { helpRect().getRight() + 14 + 22, 8, 260, 40 }; }
+
+    void paintHelp (juce::Graphics& g)
+    {
+        using namespace theme;
+        auto r = helpRect();
+        g.setColour (well);
+        g.fillRect (r);
+        g.setColour (juce::Colours::black);
+        g.drawRect (r);
+        auto in = r.reduced (10, 3);
+        if (hover.isNotEmpty())
+        {
+            g.setColour (accent);
+            g.fillRect (r.getX(), r.getY(), 2, r.getHeight());
+            g.setColour (ink);
+            g.setFont (fontBody (11.5f));
+            g.drawFittedText (hover, in, juce::Justification::centredLeft, 3, 0.85f);
+            return;
+        }
+        if (messageUntil > 0)
+        {
+            g.setColour (ledSoft);
+            g.setFont (fontBody (11.5f));
+            g.drawFittedText (message, in, juce::Justification::centredLeft, 3, 0.85f);
+            return;
+        }
+        const auto st = proc.link().status (proc.midiChannel());
+        const bool ok = (st.hostOutput || st.outOpen) && st.inOpen;
+        auto line = in.removeFromTop (in.getHeight() / 2);
+        g.setColour (ok ? accent : juce::Colour (0xff3a2a1f));
+        g.fillEllipse ((float) line.getX(), (float) line.getCentreY() - 3.5f, 7, 7);
+        const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+        juce::String t = ok ? "PEAK" : "OFFLINE";
+        t << " " << dot << " CH " << proc.midiChannel();
+        if (! st.firmware.empty())
+            t << " " << dot << " FW " << juce::String (st.firmware);
+        if (st.hostOutput)
+            t << " " << dot << " DAW";
+        g.setColour (ink2);
+        g.setFont (fontMono (11.0f));
+        g.drawText (t, line.withTrimmedLeft (14), juce::Justification::centredLeft);
+        g.setColour (ink3);
+        g.setFont (fontBody (11.0f));
+        g.drawText ("Hover a control for help " + dot + " drag a source onto a knob", in, juce::Justification::centredLeft, true);
+    }
 
     juce::String categoryText() const
     {
@@ -332,7 +381,8 @@ private:
     juce::TextButton prev { juce::CharPointer_UTF8 ("\xe2\x80\xb9") }, next { juce::CharPointer_UTF8 ("\xe2\x80\xba") };
     juce::TextButton fetch { "Fetch" }, send { "Send" }, saveBtn { "Save" };
     HoldButton compare { "Compare" };
-    juce::String message, lastStatus, lastLib, lastKey;
+    std::unique_ptr<ParamWidget> level;
+    juce::String message, lastStatus, lastLib, lastKey, hover;
     double messageUntil = 0;
 };
 
@@ -358,7 +408,7 @@ PeakEditor::PeakEditor (PeakProcessor& p)
         names.add (pg.name);
         canvas.addChildComponent (*pg.comp);
     }
-    top = std::make_unique<TopBar> (proc, names, [this] (int i) { showPage (i); });
+    top = std::make_unique<TopBar> (proc, ctx, names, [this] (int i) { showPage (i); });
     canvas.addAndMakeVisible (*top);
     addAndMakeVisible (canvas);
     canvas.setSize (theme::kWidth, theme::kHeight);

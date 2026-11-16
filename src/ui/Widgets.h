@@ -24,7 +24,7 @@ struct UiContext
 };
 
 // Base: knows its table index and draws nothing special.
-class ParamWidget : public juce::Component
+class ParamWidget : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     ParamWidget (UiContext& ctx, const std::string& id);
@@ -52,6 +52,7 @@ public:
     void itemDropped (const SourceDetails&) override;
 
     int preferredHeight() const { return preferredHeight (size); }
+    void setShowValue (bool s) { showValue = s; repaint(); }  // false: knob + label only (top bar)
     static int preferredWidth (Size s) { return s == Size::Big ? 80 : (s == Size::Small ? 46 : 56); }
     static int preferredHeight (Size s) { return s == Size::Big ? 104 : (s == Size::Small ? 70 : 80); }
 
@@ -61,6 +62,7 @@ private:
     juce::String label;
     Size size;
     bool dropHover = false;
+    bool showValue = true;
 };
 
 class ParamSegment : public ParamWidget
@@ -171,6 +173,28 @@ public:
 private:
     void setFromX (int x);
     std::unique_ptr<juce::ParameterAttachment> attachment;
+};
+
+// A thin horizontal slider: LABEL ━━━━━ value. Click or drag along it, wheel to step; double-click resets.
+class ParamSlim : public ParamWidget
+{
+public:
+    ParamSlim (UiContext&, const std::string& id, const juce::String& label);
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void setDim (bool d) { if (dim != d) { dim = d; repaint(); } }  // greyed (e.g. detune while density is 0)
+
+private:
+    juce::Rectangle<int> track() const;
+    void setFromX (int x);
+    std::unique_ptr<juce::ParameterAttachment> attachment;
+    juce::String label;
+    bool dim = false;
+    float wheelAcc = 0;
 };
 
 std::unique_ptr<ParamWidget> makeWidget (UiContext&, const peak::ui::Item&);

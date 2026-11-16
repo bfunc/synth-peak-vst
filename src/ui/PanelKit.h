@@ -37,7 +37,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     juce::Rectangle<int> content() const;  // below the title row
-    static constexpr int kTitleH = 20;
+    static constexpr int kTitleH = 22;
 
 protected:
     UiContext& ctx;

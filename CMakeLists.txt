@@ -27,7 +27,8 @@ add_library(peak_core STATIC
     src/core/SlotWrite.cpp
     src/core/BankWrite.cpp
     src/ui/Layout.cpp
-    src/ui/ModMap.cpp)
+    src/ui/ModMap.cpp
+    src/ui/Help.cpp)
 target_include_directories(peak_core PUBLIC src)
 set_target_properties(peak_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

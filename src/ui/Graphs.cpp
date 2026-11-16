@@ -248,7 +248,7 @@ void LfoGraph::draw (juce::Graphics& g, juce::Rectangle<float> r)
     const double slew = v (k + "slew") / 140.0, fade = v (k + "fade") / 127.0;
     juce::Path p;
     double prev = 0;
-    constexpr int cycles = 2;
+    constexpr int cycles = 1;
     for (int i = 0; i <= 240; ++i)
     {
         const double x = i / 240.0;
@@ -266,7 +266,6 @@ void LfoGraph::draw (juce::Graphics& g, juce::Rectangle<float> r)
 
     if (playPhase >= 0)
     {
-        // The drawing shows two cycles; mark the position in the first.
         const double y = waveAt (playPhase);
         const float px = r.getX() + (float) (playPhase / cycles) * r.getWidth();
         const float py = mid - (float) y * amp;

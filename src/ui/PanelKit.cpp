@@ -68,20 +68,22 @@ PanelFrame::PanelFrame (UiContext& c, const juce::String& t, const std::string& 
 
 juce::Rectangle<int> PanelFrame::content() const { return getLocalBounds().withTrimmedTop (kTitleH + 2); }
 
-void PanelFrame::resized() { more.setBounds (getWidth() - 22, 3, 16, 14); }
+void PanelFrame::resized() { more.setBounds (getWidth() - 22, 5, 16, 14); }
 
 void PanelFrame::paint (juce::Graphics& g)
 {
     using namespace theme;
     auto r = getLocalBounds();
-    g.setColour (panel);
+    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff1a1f25), 0, 0, panel, 0, 48, false));
     g.fillRect (r);
     g.setColour (accent);
     g.fillRect (r.removeFromTop (2));
+    g.setColour (juce::Colour (0xff0b0d10));
+    g.drawHorizontalLine (kTitleH + 1, 0.0f, (float) getWidth());
     if (title.isNotEmpty())
     {
         g.setColour (ink);
-        g.setFont (fontUi (12.0f));
+        g.setFont (fontUi (12.0f).withExtraKerningFactor (0.1f));
         g.drawText (title.toUpperCase(), juce::Rectangle<int> (8, 2, getWidth() - 40, kTitleH), juce::Justification::centredLeft);
     }
 }

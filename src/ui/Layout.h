@@ -23,7 +23,8 @@ enum class Widget
     SegmentedV,    // the same, stacked
     Toggle,        // LED + label
     Choice,        // drop-down
-    Stepper        // ‹ name ›
+    Stepper,       // ‹ name ›
+    Slim           // thin horizontal bar with label and value (saw density / detune in the wave cell)
 };
 
 struct Item

@@ -1,4 +1,4 @@
-// Colours and fonts of the editor, from docs/panel-mockup.html (one dark look in Peak colours).
+// Colours and fonts of the editor (the claude.ai design canvas mock: one dark look in Peak colours).
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -15,10 +15,11 @@ inline const juce::Colour panel { 0xff161a1f };
 inline const juce::Colour panelHi { 0xff1d2229 };
 inline const juce::Colour well { 0xff090b0e };
 inline const juce::Colour edge { 0xff252c34 };
-inline const juce::Colour edgeHi { 0xff323a44 };
+inline const juce::Colour edgeHi { 0xff36404b };
 inline const juce::Colour ink { 0xffe6ebf0 };
-inline const juce::Colour ink2 { 0xff9ba7b3 };
-inline const juce::Colour ink3 { 0xff5e6a76 };
+inline const juce::Colour ink2 { 0xffa3aebb };
+inline const juce::Colour ink3 { 0xff808c98 };  // readable on panel (4.8:1)
+inline const juce::Colour ledSoft { 0xffffb36b };  // the selected mod slot
 inline const juce::Colour accent { 0xff35b6e8 };
 inline const juce::Colour led { 0xffff7a1a };
 inline const juce::Colour knob { 0xff23292f };
