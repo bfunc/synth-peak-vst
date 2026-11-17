@@ -83,9 +83,24 @@ public:
     };
     ProgramIn lastProgramChange() const;
 
-    peak::LinkStatus status (int pluginChannel) const;
+    // ---- connection check ----
+    void playTestNote (int channel);  // C3 for half a second; the user then answers
+    void answerTestNote (bool heard);
+
+    // Every message from the Peak, for the Setup page's monitor (newest last).
+    struct MonitorLine
+    {
+        uint32_t seq = 0;
+        juce::int64 timeMs = 0;  // wall clock
+        int channel = 0;         // 0 = no channel (SysEx)
+        juce::String what, name;
+    };
+    uint32_t readMonitor (uint32_t afterSeq, std::vector<MonitorLine>& out) const;
+
+    peak::LinkStatus status (int pluginChannel, bool followChannel = true) const;
 
 private:
+    void log (int channel, const juce::String& what, const juce::String& name);  // caller holds stateLock
     PeakLink();
     void timerCallback() override;
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
@@ -129,6 +144,11 @@ private:
     std::deque<PatchIn> patchesIn;      // (S), the last 160
     uint32_t patchInSeq = 0;            // (S)
     ProgramIn programIn;                // (S)
+    std::array<MonitorLine, 64> monitor;  // ring (S)
+    uint32_t monitorSeq = 0;              // (S)
+
+    double testNoteOffMs = -1;  // message thread
+    int testNoteChannel = 1;
 
     int ticks = 0;
     bool probeAfterOpen = false;

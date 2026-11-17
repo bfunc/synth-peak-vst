@@ -1,5 +1,7 @@
 #include "PeakLink.h"
 
+#include "core/Library.h"
+
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -226,6 +228,45 @@ void PeakLink::timerCallback()
         probeAfterOpen = false;
         probe();
     }
+    if (testNoteOffMs >= 0 && nowMs() >= testNoteOffMs)
+    {
+        testNoteOffMs = -1;
+        sendShort ((uint8_t) (0x80 | ((testNoteChannel - 1) & 0x0F)), 60, 0);
+    }
+}
+
+void PeakLink::playTestNote (int channel)
+{
+    if (testNoteOffMs >= 0)
+        return;  // the last one is still playing
+    testNoteChannel = juce::jlimit (1, 16, channel);
+    sendShort ((uint8_t) (0x90 | (testNoteChannel - 1)), 60, 100);  // 60 = C3 on the Peak
+    testNoteOffMs = nowMs() + 500;
+    const juce::ScopedLock sl (stateLock);
+    st.noteTest = peak::NoteTest::Waiting;
+    st.testNoteChannel = testNoteChannel;
+}
+
+void PeakLink::answerTestNote (bool heard)
+{
+    const juce::ScopedLock sl (stateLock);
+    if (st.noteTest == peak::NoteTest::Waiting)
+        st.noteTest = heard ? peak::NoteTest::Heard : peak::NoteTest::NotHeard;
+}
+
+void PeakLink::log (int channel, const juce::String& what, const juce::String& name)
+{
+    ++monitorSeq;
+    monitor[monitorSeq % monitor.size()] = { monitorSeq, juce::Time::currentTimeMillis(), channel, what, name };
+}
+
+uint32_t PeakLink::readMonitor (uint32_t afterSeq, std::vector<MonitorLine>& out) const
+{
+    const juce::ScopedLock sl (stateLock);
+    const uint32_t from = monitorSeq - afterSeq > monitor.size() ? monitorSeq - (uint32_t) monitor.size() : afterSeq;
+    for (uint32_t s = from + 1; s <= monitorSeq; ++s)
+        out.push_back (monitor[s % monitor.size()]);
+    return monitorSeq;
 }
 
 void PeakLink::send (const juce::MidiMessage& m)
@@ -336,19 +377,26 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
 
         const juce::ScopedLock sl (stateLock);
         st.lastAnyInMs = t;
+        const auto size = "SysEx " + juce::String ((int) full.size()) + " bytes";
         if (auto info = peak::parseDeviceInquiryReply (full.data(), full.size()))
         {
             st.inquiryReplyMs = t;
             st.isPeak = info->isPeak;
             st.firmware = info->firmware;
+            log (0, size, info->isPeak ? "identity: Peak, firmware " + juce::String (info->firmware) : "identity: not a Peak");
         }
         else if (auto patch = peak::parsePatchMessage (full.data(), full.size()))
         {
             st.lastPatchMs = t;
+            log (0, size, patch->cmd == peak::PatchCmd::EditBuffer
+                              ? juce::String ("current patch")
+                              : "stored patch " + juce::String (peak::slotLabel (patch->bank, patch->slot)));
             patchesIn.push_back ({ ++patchInSeq, *patch });
             while (patchesIn.size() > kPatchesKept)
                 patchesIn.pop_front();
         }
+        else
+            log (0, size, "not used by the plugin");
         return;
     }
 
@@ -364,12 +412,15 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
         const juce::ScopedLock sl (stateLock);
         st.lastAnyInMs = t;
         programIn = { programIn.seq + 1, ch, juce::jlimit (1, 4, bankIn[(size_t) (ch - 1)]), m.getProgramChangeNumber() };  // CC 32 = 1..4
+        log (ch, "Program " + juce::String (peak::slotLabel (programIn.bank, programIn.slot)), "patch picked on the Peak");
         return;
     }
     if (! m.isController())
     {
         const juce::ScopedLock sl (stateLock);
         st.lastAnyInMs = t;
+        if (m.isNoteOn())
+            log (ch, "Note " + juce::MidiMessage::getMidiNoteName (m.getNoteNumber(), true, true, 3), "velocity " + juce::String (m.getVelocity()));
         return;
     }
 
@@ -390,7 +441,20 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     const juce::ScopedLock sl (stateLock);
     st.lastAnyInMs = t;
     if (! change)
+    {
+        // NRPN parts, the first half of a pair and Bank Select are shown with what they complete.
+        const bool part = cc == 99 || cc == 98 || cc == 6 || cc == 32 || peak::indexOfCc (cc) >= 0;
+        if (! part)
+            log (ch, "CC " + juce::String (cc) + " = " + juce::String (m.getControllerValue()),
+                 cc == 1 ? "mod wheel" : cc == 64 ? "sustain" : "not a panel parameter");
         return;
+    }
+    if (change->index >= 0 && (size_t) change->index < peak::paramTable().size())
+    {
+        const auto& def = peak::paramTable()[(size_t) change->index];
+        log (ch, juce::String (peak::paramAddress (def)) + " = " + juce::String (change->value),
+             juce::String (def.name) + (echo ? " (the plugin's own, came back)" : ""));
+    }
     if (echo)
     {
         ++st.echoCount;
@@ -438,7 +502,7 @@ PeakLink::ProgramIn PeakLink::lastProgramChange() const
     return programIn;
 }
 
-peak::LinkStatus PeakLink::status (int pluginChannel) const
+peak::LinkStatus PeakLink::status (int pluginChannel, bool followChannel) const
 {
     peak::LinkStatus s;
     {
@@ -447,6 +511,7 @@ peak::LinkStatus PeakLink::status (int pluginChannel) const
     }
     s.nowMs = nowMs();
     s.pluginChannel = pluginChannel;
+    s.followChannel = followChannel;
     s.hostOutput = hostOutput;
     {
         const std::lock_guard<std::mutex> lock (instanceMutex);

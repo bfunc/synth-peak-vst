@@ -14,7 +14,19 @@ using namespace peak;
 namespace
 {
 const juce::Identifier kPage { "editorPage" };
+
+juce::Colour healthColour (Health h)
+{
+    switch (h)
+    {
+        case Health::Ok:      return theme::good;
+        case Health::Warn:    return theme::led;
+        case Health::Bad:     return theme::bad;
+        case Health::Unknown: break;
+    }
+    return juce::Colour (0xff56616c);
 }
+} // namespace
 
 // ---------------------------------------------------------------------------------------------------------------
 // Save pop-out: name, slot, Save (writes the synth's memory after a backup), or files.
@@ -167,13 +179,13 @@ public:
 
     void refresh() override
     {
-        const auto st = proc.link().status (proc.midiChannel());
+        const auto st = proc.linkStatus();
         auto text = proc.session().statusText() + "|" + proc.library().statusText();
         const int edited = proc.session().editedCount();
         compare.setEnabled (compare.isHeld() || (proc.session().hasBaseline() && edited > 0));
         juce::String key;
         key << (int) proc.comparing() << (int) st.inOpen << (int) st.outOpen << (int) st.hostOutput << (int) st.isPeak << st.firmware << edited << proc.session().name()
-            << proc.session().originText() << proc.midiChannel();
+            << proc.session().originText() << proc.midiChannel() << (int) diagnose (st).verdictHealth;
         if (text != lastStatus)
         {
             lastStatus = text;
@@ -257,7 +269,8 @@ public:
         g.setColour (accent);
         g.strokePath (logo, juce::PathStrokeType (2.2f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
 
-        // Tabs
+        // Tabs; the Setup tab's dot shows the connection verdict.
+        const auto health = diagnose (proc.linkStatus()).verdictHealth;
         for (int i = 0; i < names.size(); ++i)
         {
             auto t = tabRect (i);
@@ -268,8 +281,16 @@ public:
             g.drawVerticalLine (t.getX(), 0, (float) getHeight());
             if (i == names.size() - 1)
                 g.drawVerticalLine (t.getRight(), 0, (float) getHeight());
-            g.setColour (on ? accent : juce::Colour (0xff2a3038));
-            g.fillEllipse ((float) t.getCentreX() - 2.5f, 16, 5, 5);
+            if (names[i] == "Setup")
+            {
+                g.setColour (healthColour (health));
+                g.fillEllipse ((float) t.getCentreX() - 3.0f, 15.5f, 6, 6);
+            }
+            else
+            {
+                g.setColour (on ? accent : juce::Colour (0xff2a3038));
+                g.fillEllipse ((float) t.getCentreX() - 2.5f, 16, 5, 5);
+            }
             g.setColour (on ? ink : ink3);
             g.setFont (fontUi (12.0f).withExtraKerningFactor (0.06f));
             g.drawText (names[i].toUpperCase(), t.withTrimmedTop (16), juce::Justification::centred);
@@ -334,10 +355,10 @@ private:
             g.drawFittedText (message, in, juce::Justification::centredLeft, 3, 0.85f);
             return;
         }
-        const auto st = proc.link().status (proc.midiChannel());
+        const auto st = proc.linkStatus();
         const bool ok = (st.hostOutput || st.outOpen) && st.inOpen;
         auto line = in.removeFromTop (in.getHeight() / 2);
-        g.setColour (ok ? accent : juce::Colour (0xff3a2a1f));
+        g.setColour (healthColour (diagnose (st).verdictHealth));
         g.fillEllipse ((float) line.getX(), (float) line.getCentreY() - 3.5f, 7, 7);
         const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
         juce::String t = ok ? "PEAK" : "OFFLINE";

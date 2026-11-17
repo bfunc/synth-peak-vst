@@ -434,25 +434,90 @@ static void testLink()
     CHECK (pc[0].status == 0xB1 && pc[0].d1 == 32 && pc[0].d2 == 3);
     CHECK (pc[1].status == 0xC1 && pc[1].d1 == 17);
 
+    // Nothing found: the first step fails and says what to do; later steps wait.
     LinkStatus s;
-    auto lines = checklist (s);
-    CHECK (! lines.empty() && lines[0].level == CheckLine::Level::Bad);
+    auto r = diagnose (s);
+    CHECK (r.steps.size() == 5);
+    CHECK (r.steps[0].health == Health::Bad && ! r.steps[0].fix.empty());
+    CHECK (r.steps[2].blocked && r.steps[3].blocked);
+    CHECK (r.verdictHealth == Health::Bad && r.verdict == "The Peak isn't connected");
+    CHECK (! r.connected);
+
+    // Busy input port
     s.inName = s.outName = "Peak";
-    s.inOpen = s.outOpen = true;
-    s.inquirySentMs = 0;
-    s.inquiryReplyMs = 100;
+    s.inBusy = true;
+    s.outOpen = true;
+    r = diagnose (s);
+    CHECK (r.verdict == "Another program holds the Peak's port");
+    CHECK (r.actions.size() == 1 && r.actions[0] == Action::CheckAgain);
+
+    // Ports open, identity asked, no reply yet: checking; after the timeout: no answer, offer the test note.
+    s.inBusy = false;
+    s.inOpen = true;
+    s.inquirySentMs = 1000;
+    s.nowMs = 1500;
+    r = diagnose (s);
+    CHECK (r.verdictHealth == Health::Unknown && r.verdict == "Checking");
+    s.nowMs = 1000 + kInquiryTimeoutMs + 1;
+    r = diagnose (s);
+    CHECK (r.verdict == "The Peak doesn't answer");
+    CHECK (r.actions.size() == 2 && r.actions[0] == Action::PlayTestNote);
+    s.hostOutput = true;  // through the DAW: SysEx may be dropped there, so no test-note detour
+    r = diagnose (s);
+    CHECK (r.actions.size() == 1 && r.actions[0] == Action::CheckAgain);
+    s.hostOutput = false;
+
+    // The test note question comes first while waiting.
+    s.noteTest = NoteTest::Waiting;
+    r = diagnose (s);
+    CHECK (r.verdictHealth == Health::Warn && r.actions.size() == 1 && r.actions[0] == Action::AnswerTestNote);
+    s.noteTest = NoteTest::NotRun;
+
+    // The Peak answers; channel not known yet: connected all the same.
+    s.inquiryReplyMs = 1100;
     s.isPeak = true;
     s.firmware = "2.1.0.8";
-    s.nowMs = 5000;
+    r = diagnose (s);
+    CHECK (r.connected && r.verdict == "Connected");
+    CHECK (r.steps[3].health == Health::Unknown && ! r.steps[3].blocked);
+
+    // Knob moves on the plugin's channel: all required steps Ok.
     s.ccInCount = 3;
     s.lastCcChannel = s.pluginChannel = 1;
-    for (const auto& l : checklist (s))
-        CHECK (l.level == CheckLine::Level::Ok);
+    r = diagnose (s);
+    for (const auto& st : r.steps)
+        CHECK (st.optional || st.health == Health::Ok);
+    CHECK (r.verdictHealth == Health::Ok);
+
+    // A channel picked by hand that differs from the Peak's: offer to use the Peak's.
+    s.followChannel = false;
     s.lastCcChannel = 2;
-    bool warned = false;
-    for (const auto& l : checklist (s))
-        warned |= l.level == CheckLine::Level::Warn;
-    CHECK (warned);
+    r = diagnose (s);
+    CHECK (! r.connected && r.verdict == "The Peak is on channel 2");
+    CHECK (r.useChannel == 2 && r.actions.size() == 1 && r.actions[0] == Action::UseChannel);
+    CHECK (r.steps[3].detail.find ("picked by hand") != std::string::npos);
+
+    // Test note not heard, everything else fine: that is the verdict.
+    s.followChannel = true;
+    s.lastCcChannel = 1;
+    s.noteTest = NoteTest::NotHeard;
+    r = diagnose (s);
+    CHECK (r.verdictHealth == Health::Bad && r.verdict == "The Peak doesn't play the test note");
+    s.noteTest = NoteTest::Heard;
+    CHECK (diagnose (s).verdictHealth == Health::Ok);
+
+    // A MIDI loop is a note, not a stop.
+    s.echoCount = 4;
+    r = diagnose (s);
+    CHECK (r.connected);
+    bool loop = false;
+    for (const auto& n : r.notes)
+        loop |= n.health == Health::Warn && n.title == "MIDI loop";
+    CHECK (loop);
+
+    CHECK (paramAddress (param ("flt_res")) == "CC 79");
+    CHECK (paramAddress (param ("glide_time")) == "CC 5");
+    CHECK (paramAddress (param ("pre_glide")).rfind ("NRPN ", 0) == 0);
 }
 
 static void testLibrary()

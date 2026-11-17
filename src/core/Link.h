@@ -1,6 +1,8 @@
 // Plain parts of the MIDI connection: picking the Peak's ports by name, program change messages, and the
-// connection checklist the Setup page shows. The JUCE side (link/PeakLink) fills LinkStatus.
+// connection diagnosis the Setup page shows. The JUCE side (link/PeakLink) fills LinkStatus.
 #pragma once
+
+#include "ParamTable.h"
 
 #include <cstdint>
 #include <string>
@@ -27,7 +29,10 @@ struct ShortMsg
 // This is what the Peak itself sends when a patch is picked on its panel (confirmed 2026-11-15; no CC 0).
 std::vector<ShortMsg> programChange (int channel, int bank, int slot);
 
-// What the connection has seen; filled by the link, read by the checklist.
+// The test note: the user plays it and says whether the Peak sounded.
+enum class NoteTest { NotRun, Waiting, Heard, NotHeard };
+
+// What the connection has seen; filled by the link, read by diagnose().
 struct LinkStatus
 {
     double nowMs = 0;
@@ -44,17 +49,46 @@ struct LinkStatus
     int ccInCount = 0;                // parameter CCs / NRPNs received from the synth
     int lastCcChannel = 0;            // channel of the last one
     int pluginChannel = 1;
+    bool followChannel = true;        // the plugin takes the channel the Peak sends on
     int echoCount = 0;                // our own messages that came straight back (a MIDI loop)
     int sharedBy = 1;                 // plugin copies sharing the port
+    NoteTest noteTest = NoteTest::NotRun;
+    int testNoteChannel = 1;          // the channel the test note went out on
 };
 
-struct CheckLine
+constexpr double kInquiryTimeoutMs = 1500;
+
+enum class Health { Ok, Warn, Bad, Unknown };
+
+struct CheckItem
 {
-    enum class Level { Ok, Warn, Bad, Info } level;
-    std::string text;
+    Health health = Health::Unknown;
+    std::string title;
+    std::string detail;
+    std::string fix;        // what to do, when not Ok
+    std::string headline;   // the verdict's title when this item is the one to fix
+    bool optional = false;  // doesn't count for "connected"
+    bool blocked = false;   // can't be judged until an earlier step works
 };
 
-// The connection checklist, in the order a user would fix things.
-std::vector<CheckLine> checklist (const LinkStatus& s);
+// What the verdict card offers to do.
+enum class Action { CheckAgain, PlayTestNote, UseChannel, AnswerTestNote };
+
+struct Report
+{
+    std::vector<CheckItem> steps;  // in order: each depends on the ones before
+    std::vector<CheckItem> notes;  // don't stop the connection, but explain odd behaviour
+    bool connected = false;        // every required step is Ok (the channel may still be unknown)
+    Health verdictHealth = Health::Unknown;
+    std::string verdict, verdictText;
+    std::vector<Action> actions;
+    int useChannel = 0;            // for Action::UseChannel
+};
+
+// The connection diagnosis: steps in the order a user would fix things, and the one thing to do now.
+Report diagnose (const LinkStatus&);
+
+// How a parameter travels as MIDI, for the monitor: "CC 79", "CC 47+49", "NRPN 0:7", "patch only".
+std::string paramAddress (const ParamDef&);
 
 } // namespace peak

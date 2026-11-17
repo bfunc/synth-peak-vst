@@ -66,6 +66,7 @@ public:
     PatchSession& session() { return *patch; }
     LibraryService& library() { return *lib; }
     PeakLink& link() { return *peakLink; }
+    peak::LinkStatus linkStatus() const { return peakLink->status (channel.load(), followChannel.load()); }
     const UiFeed& feed() const { return uiFeed; }
 
     struct Settings
