@@ -24,8 +24,8 @@ using PatchData = std::array<uint8_t, kPatchDataBytes>;
 
 enum class PatchCmd : uint8_t
 {
-    EditBuffer = 0x00,     // patch to / from the edit buffer (reply to RequestEdit confirmed; sending it not tried)
-    WriteSlot = 0x01,      // write a patch to bank/slot: writes the synth's memory (community, not tried)
+    EditBuffer = 0x00,     // patch to / from the edit buffer (both directions confirmed on the synth)
+    WriteSlot = 0x01,      // write a patch to bank/slot: writes the synth's memory (confirmed on the synth)
     RequestEdit = 0x40,    // confirmed
     RequestSlot = 0x41,    // community
 };

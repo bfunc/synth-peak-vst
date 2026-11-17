@@ -16,7 +16,7 @@ On the Peak: Settings → CC/NRPN = **Rec+Trans**, note the MIDI channel. Close 
 | 6 | FX Matrix tab: change an FX slot amount | **whole patch to the edit buffer** (first edit-buffer write) | sound follows; listen for clicks, cut notes, arp / LFO restart. Synth memory is not touched |
 | 7 | Save → pick a spare slot (e.g. D 127) → Save | reads the slot (backup), writes it, reads it back | "Saved to D 127 and checked."; backup .syx in Documents/Peak Control/Backups |
 | 8 | Presets tab → Read bank A | 128 slot requests (read only) | names fill in; about 1 min |
-| 9 | Double-click a patch in the list / ‹ › in the top bar | Bank Select + Program Change | the Peak switches to that slot (**bank numbering is a guess**: check A / B / C / D land right) |
+| 9 | Double-click a patch in the list / ‹ › in the top bar | Bank Select + Program Change | the Peak switches to that slot (CC 32 = 1..4 for A-D, confirmed) |
 | 10 | Pick a patch on the Peak's panel | nothing | the editor fetches it (if the Peak transmits program changes) |
 | 11 | In a DAW (VST3): automate cutoff, play notes through the plugin | CC + notes | sound follows automation; with Setup → playheads on: gate light, LFO dot in Sync range |
 | 12 | Open the menus (▶) on Osc / Filter / Voice: Fixed Note, Saw Density Detune, Pan, Spread Mode | NRPN | the synth follows |

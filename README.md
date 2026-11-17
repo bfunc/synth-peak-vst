@@ -3,7 +3,8 @@
 An editor for the Novation Peak (firmware 2.1): a VST3 plugin plus a standalone app for Windows.
 For Novation Peak; not affiliated with or endorsed by Novation / Focusrite.
 
-Status: **first full build, not yet tested on the synth** (see [docs/HARDWARE-TEST.md](docs/HARDWARE-TEST.md)).
+Status: **v0.1.0**, tested on the synth (firmware 2.1.0.8): standalone and VST3, patch writes, lists, DAW automation
+([docs/HARDWARE-TEST.md](docs/HARDWARE-TEST.md)).
 Plan: [docs/PLAN.md](docs/PLAN.md) · research: [docs/RESEARCH.md](docs/RESEARCH.md) ·
 code layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

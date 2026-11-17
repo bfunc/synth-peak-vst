@@ -69,9 +69,9 @@ F0 00 20 29 01 10 00 7E <cmd> 00 00 00 <bank> <slot> 00 00 <510 data bytes> F7  
 | cmd | Meaning | Status |
 |---|---|---|
 | `40` | request current patch (edit buffer); short form `F0 … 7E 40 00 00 00 00 00 F7` | confirmed |
-| `00` | patch to edit buffer (also the reply to `40`) | reply confirmed, write not tried |
+| `00` | patch to edit buffer (also the reply to `40`) | confirmed (reply and write, 2026-11-17) |
 | `41` | request one patch: `… 41 00 00 00 <bank 1-4> <slot 0-127> F7` | community |
-| `01` | write patch to bank/slot | community, writes memory |
+| `01` | write patch to bank/slot | confirmed 2026-11-17 (save to a spare slot, read back), writes memory |
 | `4A` | request a whole bank (128 messages) | community |
 | `44` | global settings dump | community |
 | `46` `47` `06` `07` `49` | user wavetables (request, names, write, rename, commit) | community, experimental |
