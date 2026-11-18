@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 3.22)
 
 project(PeakControl VERSION 0.1.1 LANGUAGES C CXX)
 set(PEAK_VERSION_LABEL "0.1.1")  # the next release; raise it right after each release
+# The version the editor shows (Setup tab, standalone title bar). CI passes PEAK_BUILD: "release" for a v* tag,
+# otherwise the short commit of a build from main. Without it the build is marked local.
+set(PEAK_BUILD "" CACHE STRING "release, or the commit of a dev build (set by CI)")
+if(PEAK_BUILD STREQUAL "release")
+    set(PEAK_VERSION_TEXT "${PEAK_VERSION_LABEL}")
+elseif(PEAK_BUILD)
+    set(PEAK_VERSION_TEXT "${PEAK_VERSION_LABEL} dev build ${PEAK_BUILD}")
+else()
+    set(PEAK_VERSION_TEXT "${PEAK_VERSION_LABEL} local build")
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -96,6 +106,7 @@ set_target_properties(peak_fonts PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(PeakControl PRIVATE src)
 target_compile_definitions(PeakControl PUBLIC
     PEAK_VERSION_LABEL="${PEAK_VERSION_LABEL}"
+    PEAK_VERSION_TEXT="${PEAK_VERSION_TEXT}"
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0

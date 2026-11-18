@@ -83,6 +83,11 @@ public:
     };
     ProgramIn lastProgramChange() const;
 
+    // The Peak's sound may have changed without a program change (e.g. Init Patch on the Peak): NRPN 62:0 came in, or
+    // many different parameters at once. Counts up; the patch session then re-reads the edit buffer.
+    uint32_t soundChangedSeq() const;
+    double lastParamSentMs() const { return lastSentMs.load(); }  // the plugin's last parameter send (any thread)
+
     // ---- connection check ----
     void playTestNote (int channel);  // C3 for half a second; the user then answers
     void answerTestNote (bool heard);
@@ -146,6 +151,17 @@ private:
 
     std::array<peak::CcDecoder, 16> decoders;  // MIDI thread only
     std::array<int, 16> bankIn {};             // MIDI thread only: last Bank Select LSB (CC 32 = 1..4) per channel
+    // MIDI thread only: the NRPN being set per channel, value + 1 (0 = none yet)
+    std::array<int, 16> nrpnMsbIn {}, nrpnLsbIn {};
+    std::atomic<double> lastSentMs { -1.0e9 };
+
+    // A burst: this many different parameters from the Peak within kBurstMs means the whole sound changed.
+    static constexpr int kBurstParams = 12;
+    static constexpr double kBurstMs = 250;
+    double burstStartMs = -1.0e9;          // MIDI thread only
+    int burstCount = 0;                    // MIDI thread only
+    std::array<uint8_t, 1024> burstMarks {};  // MIDI thread only, by parameter index
+    uint32_t soundChangedIn = 0;           // (S)
 
     std::array<ParamIn, 512> paramsIn;  // ring (S)
     uint32_t paramInSeq = 0;            // (S)

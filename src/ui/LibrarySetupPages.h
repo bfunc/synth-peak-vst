@@ -47,6 +47,9 @@ private:
     juce::ToggleButton notesThru { "Pass notes to the Peak" }, playheads { "LFO sync playhead + envelope gate light" };
     juce::TextButton check { "Check again" }, sendAll { "Send all parameters" }, rescan { "Rescan ports" };
     juce::TextButton testNote { "Play test note" };
+    juce::ComboBox watchBox;  // watch the Peak's sound (poll test); its counters are painted under it
+    juce::String watchText;
+    juce::Rectangle<int> watchTextArea;
 
     peak::Report report;
     juce::String reportKey;

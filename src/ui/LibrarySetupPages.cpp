@@ -107,6 +107,16 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
                          "Tells \"nothing reaches the Peak\" from \"the Peak's replies don't come back\".");
     testNote.onClick = [this] { proc.link().playTestNote (proc.midiChannel()); };
 
+    watchBox.addItem ("Off", 1);
+    watchBox.addItem ("Every 2 s", 2);
+    watchBox.addItem ("Every 0.25 s (stress test)", 3);
+    watchBox.setSelectedId ((int) proc.session().getWatch() + 1, juce::dontSendNotification);
+    watchBox.setTooltip ("A change made on the Peak may send nothing (Init Patch), so the editor can't see it. With this on, "
+                         "while nothing is being edited for a second, the editor reads the Peak's current sound (a read; "
+                         "the sound doesn't change) and takes the Peak's values when they differ. Not asked while Compare "
+                         "is held or when sending through the DAW.");
+    watchBox.onChange = [this] { proc.session().setWatch ((PatchSession::Watch) (watchBox.getSelectedId() - 1)); };
+
     clearMonitor.onClick = [this]
     {
         monitorLines.clear();
@@ -140,7 +150,8 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
     for (juce::Component* c : { (juce::Component*) &inBox, (juce::Component*) &outBox, (juce::Component*) &channelBox,
                                 (juce::Component*) &modeBox, (juce::Component*) &follow, (juce::Component*) &notesThru,
                                 (juce::Component*) &playheads, (juce::Component*) &check, (juce::Component*) &sendAll,
-                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &clearMonitor,
+                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &watchBox,
+                                (juce::Component*) &clearMonitor,
                                 (juce::Component*) &copyMonitor })
         addAndMakeVisible (c);
 }
@@ -172,6 +183,22 @@ void SetupPage::refresh()
 
     const auto st = proc.linkStatus();
     testNote.setEnabled (st.hostOutput || st.outOpen);
+
+    {
+        const auto& w = proc.session().getWatchStats();
+        juce::String t;
+        t << "asked " << w.asked << ", answered " << w.answered << ", no reply " << w.timeouts << ", skipped " << w.skipped;
+        if (w.lastReplyMs >= 0)
+            t << ", reply " << juce::roundToInt (w.lastReplyMs) << " ms (slowest " << juce::roundToInt (w.slowestReplyMs) << ")";
+        t << ", changes taken " << w.taken;
+        if (w.lastTaken.isNotEmpty())
+            t << ", last " << w.lastTaken;
+        if (t != watchText)
+        {
+            watchText = t;
+            repaint (watchTextArea);
+        }
+    }
 
     report = diagnose (st);
     juce::String key;
@@ -288,6 +315,11 @@ void SetupPage::resized()
     }
     left.removeFromTop (8);
     testNote.setBounds (left.removeFromTop (28).withTrimmedLeft (130).removeFromLeft (120));
+    // Below the note text and the version line (paint): Watch the sound, then its counters.
+    left.removeFromTop (16 + 96 + 12 + 20 + 12);
+    watchBox.setBounds (left.removeFromTop (28).withTrimmedLeft (130).removeFromLeft (230));
+    left.removeFromTop (4);
+    watchTextArea = left.removeFromTop (34).withTrimmedLeft (130);
 
     // Right: status title, verdict card, steps, monitor
     r.removeFromLeft (kGap);
@@ -344,6 +376,20 @@ void SetupPage::paint (juce::Graphics& g)
                       "The MIDI channel matters for knob moves, notes and program changes; SysEx (Check, patch reading, "
                       "saving) has no channel. The playhead dot is an estimate from the DAW position (Sync range only).",
                       left.removeFromTop (96).withTrimmedLeft (130), juce::Justification::topLeft, 7);
+    left.removeFromTop (12);
+    {
+        auto t = left.removeFromTop (20);
+        label (g, "Version", t.removeFromLeft (124));
+        g.setColour (ink2);
+        g.setFont (fontMono (12.0f));
+        g.drawText (juce::String ("Peak Control ") + PEAK_VERSION_TEXT, t.withTrimmedLeft (6),
+                    juce::Justification::centredLeft, true);
+    }
+    left.removeFromTop (12);
+    label (g, "Watch sound", left.removeFromTop (28).withWidth (124));
+    g.setColour (ink3);
+    g.setFont (fontBody (11.0f));
+    g.drawFittedText (watchText, watchTextArea, juce::Justification::topLeft, 2);
 
     r.removeFromLeft (kGap);
     sectionTitle (g, "Status", r.removeFromTop (28));

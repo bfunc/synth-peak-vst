@@ -9,6 +9,9 @@ namespace
 constexpr double kFetchTimeoutMs = 2500;
 constexpr double kFetchAfterProgramMs = 300;
 constexpr double kSettleMs = 600;  // after the port opens or a state arrives, before the editor and the Peak meet
+constexpr double kOutsideMs = 400;         // after the Peak's sound changed on the Peak, before re-reading it
+constexpr double kQuietAfterParamMs = 600; // the editor sent a parameter: wait, so a re-read can't undo a fresh edit
+constexpr double kQuietAfterPatchMs = 1000;
 const juce::Identifier kPcOnly { "savedOnPcOnly" };
 const juce::Identifier kSession { "session" };
 const juce::Identifier kBase { "base" };
@@ -24,6 +27,7 @@ PatchSession::PatchSession (PeakLink& l, SessionHost& h) : link (l), host (h), b
 {
     patchCursor = link.patchSeq();
     programSeen = link.lastProgramChange().seq;
+    soundSeen = link.soundChangedSeq();
 }
 
 PatchData PatchSession::build() const { return writeValues (base, host.currentValues()); }
@@ -65,6 +69,8 @@ void PatchSession::fetch()
         return;
     }
     fetchPending = true;
+    fetchKeepsReference = false;  // this read replaces a watch read still on its way
+    watchAsk = false;
     fetchAskedMs = now();
     status = "Reading the Peak's patch...";
     link.requestEditBuffer();
@@ -94,6 +100,7 @@ void PatchSession::pushAll()
     rewrite.cancel();
     sentPatch = build();
     link.sendEditBuffer (sentPatch);
+    patchSentMs = now();
     host.markAllSynced();
     push = Push::Sending;
     status = "Sending this patch to the Peak...";
@@ -111,6 +118,7 @@ void PatchSession::loadFromPc (int bank, int slot, const PatchData& data)
     if (link.canSend())
     {
         link.sendEditBuffer (build());
+        patchSentMs = now();
         host.markAllSynced();
         status = juce::String ("Loaded the PC version of ") + slotLabel (bank, slot) + ".";
     }
@@ -122,7 +130,76 @@ void PatchSession::resync()
 {
     patchCursor = link.patchSeq();
     programSeen = link.lastProgramChange().seq;
+    soundSeen = link.soundChangedSeq();
     wasConnected = false;  // this copy now meets the Peak as if it had just connected
+}
+
+void PatchSession::checkPeak (std::function<void (PeakCheck, const peak::PatchData&)> done)
+{
+    checkDone = std::move (done);  // asked in tick(), once no other read is waiting
+}
+
+void PatchSession::takePeakSound (const PatchData& data)
+{
+    const auto current = host.currentValues();
+    const auto r = readValues (data, current);
+    base = data;  // the Peak's raw bytes and name
+    if (differing (r.values, current).empty())
+        return;
+    host.applyFromSynth (r.values);
+    status = juce::String ("The Peak's sound changed on the Peak (e.g. Init Patch): the editor now has \"")
+           + patchName (data) + "\".";
+}
+
+void PatchSession::watchTick (double nowMs, bool connected)
+{
+    if (watch == Watch::Off || ! connected || link.isHostOutput())  // through the host, a request can't go out on time
+        return;
+    if (fetchPending || verifyPending || checkPending || checkDone || pushWanted || autoFetchAtMs > 0 || outsideAtMs > 0
+        || push == Push::Sending || rewrite.pending())
+        return;
+    // Quiet: nothing sent for a second (a knob, Compare, a whole patch), and Compare not held.
+    constexpr double kQuietMs = 1000.0;
+    if (nowMs - link.lastParamSentMs() < kQuietMs || nowMs - patchSentMs < kQuietMs || nowMs < nextWatchMs)
+        return;
+    const auto values = host.currentValues();
+    if (host.soundingValues() != values)
+        return;
+
+    fetchPending = true;
+    watchAsk = true;
+    fetchAskedMs = nowMs;
+    valuesAtWatch = values;
+    sentMsAtWatch = link.lastParamSentMs();
+    patchMsAtWatch = patchSentMs;
+    ++watchStats.asked;
+    link.requestEditBuffer();
+    const double every = watch == Watch::Every250ms ? 250.0 : 2000.0;
+    nextWatchMs = nowMs + juce::jmin (30000.0, every * (double) (1 << juce::jmin (watchFailures, 4)));
+}
+
+void PatchSession::takeWatched (const PatchData& data, double nowMs)
+{
+    const double took = nowMs - fetchAskedMs;  // up to one tick (33 ms) more than the real reply time
+    watchStats.lastReplyMs = took;
+    watchStats.slowestReplyMs = juce::jmax (watchStats.slowestReplyMs, took);
+    ++watchStats.answered;
+    watchFailures = 0;
+
+    // Something was sent or edited while the reply was on its way: it may be older than the edit. Skip it.
+    const auto current = host.currentValues();
+    if (link.lastParamSentMs() != sentMsAtWatch || patchSentMs != patchMsAtWatch || current != valuesAtWatch
+        || host.soundingValues() != current)
+    {
+        ++watchStats.skipped;
+        return;
+    }
+    const auto n = differing (readValues (data, current).values, current).size();
+    if (n == 0)
+        return;
+    takePeakSound (data);
+    ++watchStats.taken;
+    watchStats.lastTaken = juce::Time::getCurrentTime().formatted ("%H:%M:%S ") + juce::String ((int) n) + " values";
 }
 
 void PatchSession::loadSlot (int bank, int slot)
@@ -156,6 +233,7 @@ void PatchSession::loadFromFile (const PatchData& data, const std::string& fileN
     if (link.canSend())
     {
         link.sendEditBuffer (build());
+        patchSentMs = now();
         host.markAllSynced();
         status = juce::String ("Loaded ") + fileName + " and sent it to the edit buffer.";
     }
@@ -232,12 +310,58 @@ void PatchSession::tick (double nowMs)
         {
             setSlot (pc.bank, pc.slot);
             autoFetchAtMs = nowMs + kFetchAfterProgramMs;
+            outsideAtMs = -1;  // the program change's own read covers it
         }
     }
     if (autoFetchAtMs > 0 && nowMs >= autoFetchAtMs && ! fetchPending)
     {
         autoFetchAtMs = -1;
         fetch();
+    }
+
+    // The Peak's sound changed on the Peak without a program change (Init Patch, ...): read it once the editor has
+    // been quiet for a moment, so the read can't undo an edit that is still on its way.
+    const auto sc = link.soundChangedSeq();
+    if (sc != soundSeen)
+    {
+        soundSeen = sc;
+        if (autoFetchAtMs < 0)
+            outsideAtMs = nowMs + kOutsideMs;
+    }
+    if (outsideAtMs > 0 && nowMs >= outsideAtMs)
+    {
+        if (autoFetchAtMs > 0 || pushWanted || ! connected)
+            outsideAtMs = -1;  // a read or the project's push is coming anyway; or nobody to ask
+        else if (fetchPending || verifyPending || checkPending || nowMs - link.lastParamSentMs() < kQuietAfterParamMs
+                 || nowMs - patchSentMs < kQuietAfterPatchMs)
+            outsideAtMs = nowMs + 200;
+        else
+        {
+            outsideAtMs = -1;
+            fetchPending = true;
+            fetchKeepsReference = true;
+            fetchAskedMs = nowMs;
+            link.requestEditBuffer();
+        }
+    }
+
+    watchTick (nowMs, connected);
+
+    // Before a save: what is the Peak playing?
+    if (checkDone && ! checkPending && ! fetchPending && ! verifyPending)
+    {
+        if (! connected)
+        {
+            auto done = std::move (checkDone);
+            checkDone = nullptr;
+            done (PeakCheck::NoAnswer, {});
+        }
+        else
+        {
+            checkPending = true;
+            checkAskedMs = nowMs;
+            link.requestEditBuffer();
+        }
     }
 
     if (verifyAtMs > 0 && nowMs >= verifyAtMs && ! fetchPending)
@@ -271,8 +395,35 @@ void PatchSession::tick (double nowMs)
         else if (fetchPending)
         {
             fetchPending = false;
-            apply (p.patch.data);
+            if (std::exchange (watchAsk, false))
+            {
+                fetchKeepsReference = false;
+                takeWatched (p.patch.data, nowMs);
+            }
+            else if (std::exchange (fetchKeepsReference, false))
+                takePeakSound (p.patch.data);
+            else
+                apply (p.patch.data);
         }
+        else if (checkPending)
+        {
+            checkPending = false;
+            const auto current = host.currentValues();
+            const bool same = differing (readValues (p.patch.data, current).values, current).empty();
+            auto done = std::move (checkDone);
+            checkDone = nullptr;
+            if (done)
+                done (same ? PeakCheck::Same : PeakCheck::Differs, p.patch.data);
+        }
+    }
+    if (checkPending && nowMs - checkAskedMs > kFetchTimeoutMs)
+    {
+        checkPending = false;
+        status = "The Peak did not answer when asked what it is playing. Is the port still open?";
+        auto done = std::move (checkDone);
+        checkDone = nullptr;
+        if (done)
+            done (PeakCheck::NoAnswer, {});
     }
     if (verifyPending && nowMs - verifyAskedMs > kFetchTimeoutMs)
     {
@@ -283,12 +434,20 @@ void PatchSession::tick (double nowMs)
     if (fetchPending && nowMs - fetchAskedMs > kFetchTimeoutMs)
     {
         fetchPending = false;
-        status = "No patch came back. Check the Setup tab.";
+        fetchKeepsReference = false;
+        if (std::exchange (watchAsk, false))
+        {
+            ++watchStats.timeouts;
+            ++watchFailures;  // ask less often until the Peak answers again
+        }
+        else
+            status = "No patch came back. Check the Setup tab.";
     }
 
     if (rewrite.due (nowMs) && link.canSend())
     {
         link.sendEditBuffer (writeValues (base, host.soundingValues()));
+        patchSentMs = nowMs;
         host.markAllSynced();
     }
 }

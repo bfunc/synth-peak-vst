@@ -19,6 +19,7 @@ public:
     ~PeakEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void parentHierarchyChanged() override;  // the standalone's title bar shows the version
 
     void showPage (int index);
     void say (const juce::String& message);  // a short message in the patch display

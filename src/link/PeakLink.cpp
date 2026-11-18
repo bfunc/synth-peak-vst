@@ -337,6 +337,7 @@ void PeakLink::noteSentThroughHost (int paramIndex, int value) { rememberSent (p
 void PeakLink::rememberSent (int paramIndex, int value, bool fromAudioThread)
 {
     const double t = nowMs();
+    lastSentMs.store (t);
     auto put = [&]
     {
         sent[sentNext] = { paramIndex, value, t };
@@ -456,6 +457,10 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     const int cc = m.getControllerNumber();
     if (cc == 32)
         bankIn[(size_t) (ch - 1)] = m.getControllerValue();
+    if (cc == 99)
+        nrpnMsbIn[(size_t) (ch - 1)] = m.getControllerValue() + 1;
+    if (cc == 98)
+        nrpnLsbIn[(size_t) (ch - 1)] = m.getControllerValue() + 1;
     const auto change = decoders[(size_t) (ch - 1)].feed ((uint8_t) cc, (uint8_t) m.getControllerValue());
 
     bool echo = false;
@@ -471,8 +476,22 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     st.lastAnyInMs = t;
     if (! change)
     {
+        if (cc == 6)
+        {
+            // An NRPN the editor has no parameter for. 62:0 comes with the wave button, patch changes and (it seems)
+            // Init Patch: the sound may have changed, so the patch session re-reads it.
+            const int msb = nrpnMsbIn[(size_t) (ch - 1)] - 1, lsb = nrpnLsbIn[(size_t) (ch - 1)] - 1;
+            if (msb < 0 || lsb < 0)
+                return;  // Data Entry without an NRPN
+            const bool soundChanged = msb == 62 && lsb == 0;
+            if (soundChanged)
+                ++soundChangedIn;
+            log (ch, "NRPN " + juce::String (msb) + ":" + juce::String (lsb) + " = " + juce::String (m.getControllerValue()),
+                 soundChanged ? "the Peak's sound changed: reading it" : "not a panel parameter");
+            return;
+        }
         // NRPN parts, the first half of a pair and Bank Select are shown with what they complete.
-        const bool part = cc == 99 || cc == 98 || cc == 6 || cc == 32 || peak::indexOfCc (cc) >= 0;
+        const bool part = cc == 99 || cc == 98 || cc == 32 || peak::indexOfCc (cc) >= 0;
         if (! part)
             log (ch, "CC " + juce::String (cc) + " = " + juce::String (m.getControllerValue()),
                  cc == 1 ? "mod wheel" : cc == 64 ? "sustain" : "not a panel parameter");
@@ -491,6 +510,24 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     }
     ++st.ccInCount;
     st.lastCcChannel = ch;
+
+    // Many different parameters at once (not a knob turn): the whole sound changed.
+    if (t - burstStartMs > kBurstMs)
+    {
+        burstStartMs = t;
+        burstCount = 0;
+        burstMarks.fill (0);
+    }
+    if ((size_t) change->index < burstMarks.size() && burstMarks[(size_t) change->index] == 0)
+    {
+        burstMarks[(size_t) change->index] = 1;
+        if (++burstCount == kBurstParams)
+        {
+            ++soundChangedIn;
+            log (ch, juce::String (kBurstParams) + "+ parameters at once", "the Peak's sound changed: reading it");
+        }
+    }
+
     ++paramInSeq;
     paramsIn[paramInSeq % paramsIn.size()] = { paramInSeq, ch, change->index, change->value };
 }
@@ -529,6 +566,12 @@ PeakLink::ProgramIn PeakLink::lastProgramChange() const
 {
     const juce::ScopedLock sl (stateLock);
     return programIn;
+}
+
+uint32_t PeakLink::soundChangedSeq() const
+{
+    const juce::ScopedLock sl (stateLock);
+    return soundChangedIn;
 }
 
 peak::LinkStatus PeakLink::status (int pluginChannel, bool followChannel) const
