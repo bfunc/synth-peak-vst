@@ -30,7 +30,7 @@ A layer only uses the layers above it in this list. `core` knows nothing about J
 | `ui/ModMap` | mod destination ⇄ knob, drop-a-source logic | ParamTable |
 | `link/PeakLink` | ports (shared by all plugin copies), host / direct output, incoming decode | core |
 | `plugin/ParamBridge` | table ⇄ JUCE parameters (the only place that knows JUCE's storage) | JUCE |
-| `plugin/PatchSession` | current patch bytes, origin, Fetch / Send / program change, rewrites | PeakLink, `SessionHost` |
+| `plugin/PatchSession` | current patch bytes, origin, push / fetch when the editor and the Peak meet, Fetch, program change, rewrites | PeakLink, `SessionHost` |
 | `plugin/LibraryService` | bank reading, cache, files, careful save | PeakLink, PatchSession |
 | `plugin/PeakProcessor` | wires the above; threads; DAW state | everything in plugin |
 | `plugin/UiFeed` | transport + held notes for the UI, atomics only | — |

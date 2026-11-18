@@ -9,6 +9,8 @@ using namespace peak;
 namespace
 {
 const char* kCacheName = "library-cache.syx";
+const char* kPcOnlyName = "pc-only-slots.txt";      // slots whose newest version is on the PC only
+const char* kFirstCopyName = "first-copy-offered.txt";
 
 std::vector<uint8_t> readAll (const juce::File& f)
 {
@@ -47,7 +49,91 @@ double now() { return juce::Time::getMillisecondCounterHiRes(); }
 LibraryService::LibraryService (PeakLink& l, PatchSession& s) : link (l), session (s)
 {
     patchCursor = link.patchSeq();
+    programSeen = link.lastProgramChange().seq;
     loadCache();
+    loadPcOnly();
+}
+
+void LibraryService::resync()
+{
+    patchCursor = link.patchSeq();
+    programSeen = link.lastProgramChange().seq;
+}
+
+// ---- PC-only slots: "A 012" lines in a small text file next to the cache ----
+
+void LibraryService::loadPcOnly()
+{
+    juce::StringArray lines;
+    userFolder().getChildFile (kPcOnlyName).readLines (lines);
+    for (const auto& l : lines)
+    {
+        const auto t = l.trim();
+        if (t.length() == 5 && t[0] >= 'A' && t[0] <= 'D')
+            pcOnly.insert (key (t[0] - 'A' + 1, t.substring (2).getIntValue()));
+    }
+}
+
+void LibraryService::savePcOnly() const
+{
+    juce::StringArray lines;
+    for (int k : pcOnly)
+        lines.add (slotLabel (k / 1000, k % 1000));
+    const auto f = userFolder().getChildFile (kPcOnlyName);
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText (lines.joinIntoString ("\r\n"));
+}
+
+void LibraryService::saveOnPcOnly (int bank, int slot, const std::string& name)
+{
+    session.setName (name);
+    lib.set (bank, slot, session.build());
+    pcOnly.insert (key (bank, slot));
+    savePcOnly();
+    saveCache();
+    session.noteSavedToSlot (bank, slot, true);
+    ++rev;
+    status = juce::String ("Saved \"") + name + "\" as " + slotLabel (bank, slot) + " on this PC. The Peak's "
+           + slotLabel (bank, slot) + " is unchanged: write it from the Presets tab.";
+}
+
+void LibraryService::writeToPeak (int bank, int slot)
+{
+    if (isPcOnly (bank, slot))
+        startSlotWrite (bank, slot, lib.at (bank, slot).data, false);
+}
+
+// ---- first run ----
+
+bool LibraryService::offerFirstCopy() const
+{
+    return lib.loadedCount() == 0 && ! userFolder().getChildFile (kFirstCopyName).existsAsFile();
+}
+
+void LibraryService::dismissFirstCopy()
+{
+    const auto f = userFolder().getChildFile (kFirstCopyName);
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText ("The offer to copy the Peak's patches was shown.");
+    ++rev;
+}
+
+void LibraryService::copyAll()
+{
+    dismissFirstCopy();
+    readBanks ({ 1, 2, 3, 4 });
+}
+
+std::pair<int, int> LibraryService::findSlot (const PatchData& data) const
+{
+    for (int b = 1; b <= kBanks; ++b)
+        for (int s = 0; s < kSlots; ++s)
+        {
+            const auto& e = lib.at (b, s);
+            if (e.loaded && e.data == data)
+                return { b, s };
+        }
+    return { 0, 0 };
 }
 
 juce::File LibraryService::userFolder()
@@ -234,8 +320,6 @@ void LibraryService::startSlotWrite (int bank, int slot, const PatchData& data, 
     status = slotWriter->message();
 }
 
-bool LibraryService::exportPatch (const juce::File& f) const { return writeAll (f, patchFile (session.build())); }
-
 // ---- tick ----
 
 void LibraryService::tick (double nowMs)
@@ -253,8 +337,27 @@ void LibraryService::tick (double nowMs)
             bankWriter->gotPatch (m.bank, m.slot, m.data);
         if (reading)
             reading->gotReply (m.bank, m.slot);
+        if (isPcOnly (m.bank, m.slot))
+            continue;  // the PC holds a newer version of this slot; the Peak's older one does not replace it
         lib.set (m.bank, m.slot, m.data);  // whatever the synth sends is what it holds
         ++rev;
+    }
+
+    // The Peak switched to another slot (its panel, or a Load here): read that slot again shortly, so a save made
+    // with the Peak's own Write button shows up in the PC copy. Read only; skipped while something else runs.
+    const auto pc = link.lastProgramChange();
+    if (pc.seq != programSeen)
+    {
+        programSeen = pc.seq;
+        rereadBank = pc.bank;
+        rereadSlot = pc.slot;
+        rereadAtMs = nowMs + 900;  // after PatchSession's own fetch of the edit buffer
+    }
+    if (rereadAtMs > 0 && nowMs >= rereadAtMs)
+    {
+        rereadAtMs = -1;
+        if (! busy() && link.canSend() && rereadBank >= 1 && rereadBank <= kBanks)
+            link.requestPatch (rereadBank, rereadSlot);
     }
 
     if (reading)
@@ -296,8 +399,13 @@ void LibraryService::tick (double nowMs)
         status = slotWriter->message();
         if (slotWriter->step() == SlotWrite::Step::Done)
         {
+            // The Peak and the PC copy now hold the same patch.
+            lib.set (slotWriter->bank(), slotWriter->slot(), slotWriter->patch());
+            if (pcOnly.erase (key (slotWriter->bank(), slotWriter->slot())) > 0)
+                savePcOnly();
+            ++rev;
             if (slotFromEditor)
-                session.noteSavedToSlot (slotWriter->bank(), slotWriter->slot());
+                session.noteSavedToSlot (slotWriter->bank(), slotWriter->slot(), false);
             saveCache();
         }
     }
@@ -317,6 +425,8 @@ void LibraryService::tick (double nowMs)
         {
             link.writeSlot (a.bank, a.slot, *a.data);
             lib.set (a.bank, a.slot, *a.data);
+            if (pcOnly.erase (key (a.bank, a.slot)) > 0)
+                savePcOnly();
             ++rev;
         }
         status = bankWriter->message();

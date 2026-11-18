@@ -1,6 +1,7 @@
 // The current patch on the message thread: its raw bytes (so bytes the editor does not map yet survive a round trip),
-// where it came from (a slot, a file, or unknown), the values it was loaded with (for "edited" and reset), Fetch /
-// Send / program changes, and the whole-patch rewrite for parameters without a live CC / NRPN.
+// where it came from (a slot, a file, or unknown), the values it was saved or loaded with (for "edited", the saved
+// marks and Compare), Fetch / program changes, pushing the whole patch when the editor and the Peak meet, and the
+// whole-patch rewrite for parameters without a live CC / NRPN.
 //
 // It reaches the rest of the plugin only through SessionHost and PeakLink, so it can change without touching them.
 #pragma once
@@ -11,8 +12,10 @@
 #include "core/Timing.h"
 #include "link/PeakLink.h"
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 class SessionHost
 {
@@ -36,12 +39,24 @@ public:
     void tick (double nowMs);                // message thread, ~30 Hz
     void patchOnlyChanged (double nowMs);    // a patch-only parameter changed: schedule a rewrite
 
-    void fetch();                            // read the edit buffer into the editor
-    void sendAll();                          // write the editor's patch into the edit buffer
+    // The editor and the Peak play the same sound. When they meet (the Peak connects or comes back, a project opens),
+    // one side wins: a DAW project that brought its own patch pushes it to the Peak; otherwise (the standalone app, a
+    // new plugin copy) the editor takes the Peak's sound.
+    void setEditorIsMaster (bool m) { editorIsMaster = m; }
+    std::function<std::pair<int, int> (const peak::PatchData&)> findSlot;  // a stored patch with the same bytes
+
+    enum class Push { Idle, Sending, Failed };
+    Push pushState() const { return push; }
+
+    void fetchSaved();                       // Fetch: this slot as saved on the Peak (program change, then read)
+    bool canFetchSaved() const { return org.kind == Origin::Kind::Slot; }
     void loadSlot (int bank, int slot);      // program change, then fetch
     void step (int delta);                   // next / previous slot (A 000 after D 127 wraps)
     void loadFromFile (const peak::PatchData&, const std::string& fileName);  // into the editor and the edit buffer
-    void noteSavedToSlot (int bank, int slot);
+    void loadFromPc (int bank, int slot, const peak::PatchData&);  // a PC-only slot: its PC version, onto the Peak too
+    void noteSavedToSlot (int bank, int slot, bool pcOnly);
+    bool savedOnPcOnly() const { return baselinePcOnly; }  // the reference is a save that only the PC has
+    void resync();                           // skip what arrived while this copy was not the main one
 
     peak::PatchData build() const;           // the editor's patch: raw bytes + current values + name
     std::string name() const;
@@ -67,6 +82,8 @@ public:
     void fromState (const juce::ValueTree&);
 
 private:
+    void fetch();                            // read the edit buffer into the editor
+    void pushAll();                          // write the editor's patch into the edit buffer, then read it back
     void apply (const peak::PatchData&);
     void setSlot (int bank, int slot);
 
@@ -87,4 +104,12 @@ private:
     uint32_t patchCursor = 0;
     uint32_t programSeen = 0;
     double autoFetchAtMs = -1;
+
+    bool editorIsMaster = true;
+    bool stateLoaded = false;     // a saved state (project) brought its own patch
+    bool baselinePcOnly = false;
+    bool wasConnected = false;
+    bool pushWanted = false;
+    double pushAtMs = -1;
+    Push push = Push::Idle;
 };

@@ -8,6 +8,8 @@ namespace
 {
 constexpr double kFetchTimeoutMs = 2500;
 constexpr double kFetchAfterProgramMs = 300;
+constexpr double kSettleMs = 600;  // after the port opens or a state arrives, before the editor and the Peak meet
+const juce::Identifier kPcOnly { "savedOnPcOnly" };
 const juce::Identifier kSession { "session" };
 const juce::Identifier kBase { "base" };
 const juce::Identifier kKind { "originKind" };
@@ -68,24 +70,65 @@ void PatchSession::fetch()
     link.requestEditBuffer();
 }
 
-void PatchSession::sendAll()
+void PatchSession::fetchSaved()
 {
+    if (org.kind != Origin::Kind::Slot)
+        return;
     if (! link.canSend())
     {
         status = "Not connected: see the Setup tab.";
+        return;
+    }
+    loadSlot (org.bank, org.slot);
+    status = juce::String ("Fetching ") + slotLabel (org.bank, org.slot) + " as saved on the Peak...";
+}
+
+void PatchSession::pushAll()
+{
+    if (! link.canSend())
+    {
+        push = Push::Failed;
+        status = "Not connected: the patch goes to the Peak when it is back.";
         return;
     }
     rewrite.cancel();
     sentPatch = build();
     link.sendEditBuffer (sentPatch);
     host.markAllSynced();
-    status = "Sending the patch to the Peak's edit buffer...";
+    push = Push::Sending;
+    status = "Sending this patch to the Peak...";
     verifyAtMs = now() + 250;  // give the Peak a moment, then read it back
+}
+
+void PatchSession::loadFromPc (int bank, int slot, const PatchData& data)
+{
+    base = data;
+    const auto r = readValues (data, host.currentValues());
+    host.applyFromSynth (r.values);
+    baseline = r.values;
+    setSlot (bank, slot);
+    baselinePcOnly = true;
+    if (link.canSend())
+    {
+        link.sendEditBuffer (build());
+        host.markAllSynced();
+        status = juce::String ("Loaded the PC version of ") + slotLabel (bank, slot) + ".";
+    }
+    else
+        status = juce::String ("Loaded the PC version of ") + slotLabel (bank, slot) + " (not connected, nothing sent).";
+}
+
+void PatchSession::resync()
+{
+    patchCursor = link.patchSeq();
+    programSeen = link.lastProgramChange().seq;
+    wasConnected = false;  // this copy now meets the Peak as if it had just connected
 }
 
 void PatchSession::loadSlot (int bank, int slot)
 {
     setSlot (bank, slot);
+    baselinePcOnly = false;
     link.sendProgramChange (host.midiChannel(), org.bank, org.slot);
     autoFetchAtMs = now() + kFetchAfterProgramMs;
     status = juce::String ("Loading ") + slotLabel (org.bank, org.slot) + "...";
@@ -107,6 +150,7 @@ void PatchSession::loadFromFile (const PatchData& data, const std::string& fileN
     const auto r = readValues (data, host.currentValues());
     host.applyFromSynth (r.values);
     baseline = r.values;
+    baselinePcOnly = false;
     org.kind = Origin::Kind::File;
     org.file = fileName;
     if (link.canSend())
@@ -119,11 +163,12 @@ void PatchSession::loadFromFile (const PatchData& data, const std::string& fileN
         status = juce::String ("Loaded ") + fileName + " (not connected, nothing sent).";
 }
 
-void PatchSession::noteSavedToSlot (int bank, int slot)
+void PatchSession::noteSavedToSlot (int bank, int slot, bool pcOnly)
 {
     setSlot (bank, slot);
     base = build();
     baseline = host.currentValues();
+    baselinePcOnly = pcOnly;
 }
 
 void PatchSession::apply (const PatchData& data)
@@ -132,15 +177,52 @@ void PatchSession::apply (const PatchData& data)
     const auto r = readValues (data, host.currentValues());
     host.applyFromSynth (r.values);
     baseline = r.values;
+    baselinePcOnly = false;
     status = juce::String ("Got \"") + patchName (data) + "\": " + juce::String (r.read) + " values";
     if (! r.outOfRange.empty())
         status << ", " << (int) r.outOfRange.size() << " out of range (kept)";
+    // Not knowing the slot (e.g. on start): a stored patch with the same bytes tells which one it is.
+    if (org.kind != Origin::Kind::Slot && findSlot)
+    {
+        const auto [b, s] = findSlot (data);
+        if (b >= 1)
+            setSlot (b, s);
+    }
 }
 
 void PatchSession::patchOnlyChanged (double nowMs) { rewrite.touch (nowMs); }
 
 void PatchSession::tick (double nowMs)
 {
+    // The editor and the Peak meet: when the port opens (at start or after the Peak was away). A project that brought
+    // its own patch pushes it; otherwise the editor takes the Peak's sound. Waits a moment for a host that restores
+    // its state more than once.
+    const bool connected = link.canSend();
+    if (connected && ! wasConnected)
+    {
+        if (editorIsMaster && stateLoaded)
+        {
+            pushWanted = true;
+            pushAtMs = juce::jmax (pushAtMs, nowMs + kSettleMs);
+        }
+        else if (autoFetchAtMs < 0 && ! fetchPending)
+        {
+            org.kind = Origin::Kind::None;  // the Peak's sound; apply() finds its slot when the PC copy has it
+            autoFetchAtMs = nowMs + kSettleMs;
+        }
+    }
+    wasConnected = connected;
+    if (pushWanted && nowMs >= pushAtMs)
+    {
+        if (! connected)
+            push = Push::Failed;  // waits for the Peak; sent when it connects (above)
+        else if (! fetchPending && ! verifyPending)
+        {
+            pushWanted = false;
+            pushAll();
+        }
+    }
+
     // A patch picked on the synth: that slot is now the origin; read the new sound shortly.
     const auto pc = link.lastProgramChange();
     if (pc.seq != programSeen)
@@ -175,14 +257,15 @@ void PatchSession::tick (double nowMs)
         if (verifyPending)
         {
             verifyPending = false;
+            push = Push::Idle;
             if (p.patch.data == sentPatch)
-                status = juce::String ("Sent \"") + patchName (sentPatch) + "\" to the edit buffer and checked.";
+                status = juce::String ("Sent \"") + patchName (sentPatch) + "\" to the Peak and checked.";
             else
             {
                 int differ = 0;
                 for (size_t i = 0; i < sentPatch.size(); ++i)
                     differ += p.patch.data[i] != sentPatch[i];
-                status = "Sent, but the Peak's edit buffer differs in " + juce::String (differ) + " bytes.";
+                status = "Sent, but the Peak's sound differs in " + juce::String (differ) + " bytes.";
             }
         }
         else if (fetchPending)
@@ -194,6 +277,7 @@ void PatchSession::tick (double nowMs)
     if (verifyPending && nowMs - verifyAskedMs > kFetchTimeoutMs)
     {
         verifyPending = false;
+        push = Push::Failed;
         status = "Sent, but the Peak did not answer the check. Is the port still open?";
     }
     if (fetchPending && nowMs - fetchAskedMs > kFetchTimeoutMs)
@@ -221,6 +305,7 @@ juce::ValueTree PatchSession::toState() const
     for (int v : baseline)
         b.add (juce::String (v));
     t.setProperty (kBaseline, b.joinIntoString (","), nullptr);
+    t.setProperty (kPcOnly, baselinePcOnly, nullptr);
     return t;
 }
 
@@ -242,4 +327,14 @@ void PatchSession::fromState (const juce::ValueTree& t)
     if (b.size() == (int) paramTable().size())
         for (const auto& s : b)
             baseline.push_back (s.getIntValue());
+    baselinePcOnly = (bool) t.getProperty (kPcOnly, false);
+
+    // A project brought its own patch: it goes to the Peak once the state has settled (hosts may restore twice).
+    stateLoaded = true;
+    if (editorIsMaster)
+    {
+        pushWanted = true;
+        pushAtMs = now() + kSettleMs;
+        autoFetchAtMs = -1;
+    }
 }

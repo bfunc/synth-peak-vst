@@ -29,7 +29,7 @@ juce::Colour healthColour (Health h)
 } // namespace
 
 // ---------------------------------------------------------------------------------------------------------------
-// Save pop-out: name, slot, Save (writes the synth's memory after a backup), or files.
+// Save pop-out: name, slot, Save (the Peak's slot after a backup, and the PC copy) or Save on PC only.
 
 class SavePanel : public juce::Component
 {
@@ -46,13 +46,17 @@ public:
         const auto& o = proc.session().origin();
         bank.setSelectedId (o.kind == PatchSession::Origin::Kind::Slot ? o.bank : 1, juce::dontSendNotification);
         slot.setSelectedId ((o.kind == PatchSession::Origin::Kind::Slot ? o.slot : 0) + 1, juce::dontSendNotification);
+        bank.onChange = slot.onChange = [this] { repaint(); };
         save.onClick = [this] { confirmSave(); };
-        exportBtn.onClick = [this] { exportFile(); };
-        importBtn.onClick = [this] { importFile(); };
+        pcOnly.onClick = [this] { saveOnPc(); };
+        save.setTooltip ("Write this patch into the slot on the Peak (its old patch is backed up first, then read back) "
+                         "and into the PC copy.");
+        pcOnly.setTooltip ("Keep this version on the PC only. The Peak's slot stays as it is until you write it from "
+                           "the Presets tab.");
         for (juce::Component* c : { (juce::Component*) &name, (juce::Component*) &bank, (juce::Component*) &slot,
-                                    (juce::Component*) &save, (juce::Component*) &exportBtn, (juce::Component*) &importBtn })
+                                    (juce::Component*) &save, (juce::Component*) &pcOnly })
             addAndMakeVisible (c);
-        setSize (360, 214);
+        setSize (380, 176);
     }
 
     void paint (juce::Graphics& g) override
@@ -63,10 +67,16 @@ public:
         g.setFont (fontUi (11.0f));
         g.drawText ("NAME", 12, 12, 60, 26, juce::Justification::centredLeft);
         g.drawText ("SLOT", 12, 48, 60, 26, juce::Justification::centredLeft);
-        g.setFont (fontUi (11.5f, false));
-        g.drawFittedText ("Saving writes the Peak's memory. The slot's old patch is saved first to\n"
-                              + LibraryService::backupFolder().getFullPathName(),
-                          12, 116, getWidth() - 24, 40, juce::Justification::topLeft, 3);
+        // What is in the slot now.
+        const int b = bank.getSelectedId(), s = slot.getSelectedId() - 1;
+        const auto& e = proc.library().library().at (b, s);
+        g.setFont (fontBody (12.0f));
+        g.drawText (e.loaded ? "now \"" + juce::String (e.name) + "\"" : juce::String ("not read yet"),
+                    222, 48, getWidth() - 234, 26, juce::Justification::centredLeft, true);
+        g.setFont (fontBody (11.5f));
+        g.drawFittedText ("Save writes the Peak and the PC copy; the slot's old patch is backed up first to "
+                              + LibraryService::backupFolder().getFullPathName() + ".",
+                          12, 128, getWidth() - 24, 40, juce::Justification::topLeft, 3);
     }
 
     void resized() override
@@ -74,9 +84,8 @@ public:
         name.setBounds (76, 12, getWidth() - 88, 26);
         bank.setBounds (76, 48, 60, 26);
         slot.setBounds (142, 48, 72, 26);
-        save.setBounds (getWidth() - 132, 48, 120, 26);
-        exportBtn.setBounds (12, getHeight() - 40, 160, 28);
-        importBtn.setBounds (getWidth() - 172, getHeight() - 40, 160, 28);
+        save.setBounds (76, 88, 110, 28);
+        pcOnly.setBounds (194, 88, 150, 28);
     }
 
 private:
@@ -87,7 +96,8 @@ private:
         const auto old = e.loaded ? " (now \"" + juce::String (e.name) + "\")" : juce::String();
         juce::AlertWindow::showOkCancelBox (
             juce::MessageBoxIconType::WarningIcon, "Save to " + juce::String (slotLabel (b, s)),
-            "Write \"" + name.getText() + "\" into " + slotLabel (b, s) + old + "?\nThe old patch is backed up first.",
+            "Write \"" + name.getText() + "\" into " + slotLabel (b, s) + old
+                + " on the Peak and on this PC?\nThe Peak's old patch is backed up first.",
             "Save", "Cancel", nullptr,
             juce::ModalCallbackFunction::create ([p = &proc, b, s, n = name.getText().toStdString()] (int ok)
             {
@@ -98,57 +108,72 @@ private:
             box->dismiss();
     }
 
-    void exportFile()
+    void saveOnPc()
     {
-        proc.session().setName (name.getText().toStdString());
-        auto file = LibraryService::userFolder().getChildFile (juce::File::createLegalFileName (name.getText().trim()) + ".syx");
-        chooser = std::make_unique<juce::FileChooser> ("Export patch", file, "*.syx");
-        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
-                              [p = &proc] (const juce::FileChooser& fc)
-        {
-            if (fc.getResult() != juce::File())
-                p->library().exportPatch (fc.getResult().withFileExtension ("syx"));
-        });
-    }
-
-    void importFile()
-    {
-        chooser = std::make_unique<juce::FileChooser> ("Load a patch", LibraryService::userFolder(), "*.syx");
-        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                              [p = &proc] (const juce::FileChooser& fc)
-        {
-            // One patch: play it now (edit buffer). More: they show on the Presets tab under File.
-            if (fc.getResult().existsAsFile() && p->library().openFile (fc.getResult()) && p->library().file().size() == 1)
-                p->library().tryPatch (0);
-        });
+        proc.library().saveOnPcOnly (bank.getSelectedId(), slot.getSelectedId() - 1, name.getText().toStdString());
+        if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
+            box->dismiss();
     }
 
     PeakProcessor& proc;
     juce::TextEditor name;
     juce::ComboBox bank, slot;
-    juce::TextButton save { "Save to slot" }, exportBtn { "Export .syx..." }, importBtn { "Load .syx..." };
-    std::unique_ptr<juce::FileChooser> chooser;
+    juce::TextButton save { "Save" }, pcOnly { "Save on PC only" };
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Top bar: logo | page tabs | help display | ‹ patch › | Fetch Send Compare Save | Patch Level.
+// The LED and short word in the patch display: is this sound saved, edited, on the PC only, being sent? Its tooltip
+// (shown in the help display) says more. An indicator only.
+
+class StatusChip : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    void set (juce::Colour c, const juce::String& t, const juce::String& tip)
+    {
+        if (c == colour && t == text && tip == getTooltip())
+            return;
+        colour = c;
+        text = t;
+        setTooltip (tip);
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds();
+        g.setFont (theme::fontMono (9.5f));
+        const int w = (int) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 1;
+        auto t = r.removeFromRight (w);
+        g.setColour (colour);
+        g.drawText (text, t, juce::Justification::centredRight);
+        g.fillEllipse ((float) t.getX() - 11.0f, (float) r.getCentreY() - 3.5f, 7.0f, 7.0f);
+    }
+
+private:
+    juce::Colour colour;
+    juce::String text;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Top bar: logo | page tabs | help display | ‹ patch (status) › | Fetch Compare Load Save | Patch Level.
 // The help display shows the help of the control under the mouse, short messages, or the connection when idle.
 
 class TopBar : public juce::Component, public Refreshable
 {
 public:
-    TopBar (PeakProcessor& p, UiContext& c, const juce::StringArray& pageNames, std::function<void (int)> onPage)
-        : proc (p), names (pageNames), pageChanged (std::move (onPage))
+    TopBar (PeakProcessor& p, UiContext& c, const juce::StringArray& pageNames, std::function<void (int)> onPage,
+            std::function<void()> onBankFile)
+        : proc (p), names (pageNames), pageChanged (std::move (onPage)), bankFileOpened (std::move (onBankFile))
     {
         prev.onClick = [this] { proc.session().step (-1); };
         next.onClick = [this] { proc.session().step (1); };
         prev.setTooltip ("Previous patch in the bank (sends Program Change).");
         next.setTooltip ("Next patch in the bank (sends Program Change).");
-        fetch.setTooltip ("Fetch: read the Peak's edit buffer into the editor.");
-        send.setTooltip ("Send: write this patch to the Peak's edit buffer (not its memory), read it back and report whether the Peak took it.");
-        saveBtn.setTooltip ("Save: pick a slot, back up what is there, then write the patch. Or save to a .syx file.");
-        fetch.onClick = [this] { proc.session().fetch(); };
-        send.onClick = [this] { proc.session().sendAll(); };
+        saveBtn.setTooltip ("Save: into a slot on the Peak and the PC copy (the old patch is backed up first), or on the PC only.");
+        loadBtn.setTooltip ("Load: open a .syx file. One patch goes into the editor and onto the Peak (its memory is not "
+                            "changed); a bank or a backup opens on the Presets tab.");
+        fetch.onClick = [this] { proc.session().fetchSaved(); };
+        loadBtn.onClick = [this] { openFile(); };
         saveBtn.onClick = [this]
         {
             juce::CallOutBox::launchAsynchronously (std::make_unique<SavePanel> (proc), saveBtn.getScreenBounds(), nullptr);
@@ -160,8 +185,8 @@ public:
         if (auto* k = dynamic_cast<ParamKnob*> (level.get()))
             k->setShowValue (false);
         for (juce::Component* comp : { (juce::Component*) &prev, (juce::Component*) &next, (juce::Component*) &fetch,
-                                       (juce::Component*) &send, (juce::Component*) &saveBtn, (juce::Component*) &compare,
-                                       (juce::Component*) level.get() })
+                                       (juce::Component*) &loadBtn, (juce::Component*) &saveBtn, (juce::Component*) &compare,
+                                       (juce::Component*) &chip, (juce::Component*) level.get() })
             addAndMakeVisible (comp);
     }
 
@@ -183,6 +208,12 @@ public:
         auto text = proc.session().statusText() + "|" + proc.library().statusText();
         const int edited = proc.session().editedCount();
         compare.setEnabled (compare.isHeld() || (proc.session().hasBaseline() && edited > 0));
+        fetch.setEnabled (proc.session().canFetchSaved() && (edited > 0 || proc.session().savedOnPcOnly()));
+        fetch.setTooltip (proc.session().canFetchSaved()
+                              ? "Fetch: reload " + juce::String (slotLabel (proc.session().origin().bank, proc.session().origin().slot))
+                                    + " as saved on the Peak, into the editor and the Peak. Your unsaved changes are dropped."
+                              : juce::String ("Fetch: reload this slot as saved on the Peak. Not in a slot yet: nothing to fetch."));
+        updateChip (edited);
         juce::String key;
         key << (int) proc.comparing() << (int) st.inOpen << (int) st.outOpen << (int) st.hostOutput << (int) st.isPeak << st.firmware << edited << proc.session().name()
             << proc.session().originText() << proc.midiChannel() << (int) diagnose (st).verdictHealth;
@@ -241,11 +272,12 @@ public:
         prev.setBounds (o.getX() - 22, o.getY(), 22, o.getHeight());
         next.setBounds (o.getRight(), o.getY(), 22, o.getHeight());
         auto a = juce::Rectangle<int> (next.getRight() + 14, 15, 274, 26);
-        for (juce::Component* b : { (juce::Component*) &fetch, (juce::Component*) &send, (juce::Component*) &compare, (juce::Component*) &saveBtn })
+        for (juce::Component* b : { (juce::Component*) &fetch, (juce::Component*) &compare, (juce::Component*) &loadBtn, (juce::Component*) &saveBtn })
         {
             b->setBounds (a.removeFromLeft (64));
             a.removeFromLeft (6);
         }
+        chip.setBounds (o.getRight() - 10 - 120, o.getY() + 3, 120, 15);
         if (level != nullptr)
             level->setBounds (getWidth() - 22 - 46, 2, 46, 54);
     }
@@ -310,19 +342,10 @@ public:
         g.setColour (proc.comparing() ? led : ink3);
         g.drawText (proc.comparing() ? juce::String ("HEARING THE SAVED PATCH")
                                      : juce::String (proc.session().originText()).toUpperCase() + (cat.isNotEmpty() ? "  " + cat : ""),
-                    in.removeFromTop (13), juce::Justification::centredLeft, true);
+                    in.removeFromTop (13).withTrimmedRight (chip.getWidth() + 4), juce::Justification::centredLeft, true);
         g.setFont (fontMono (15.0f));
         g.setColour (accent);
-        const auto name = juce::String (proc.session().name());
-        g.drawText (name, in, juce::Justification::centredLeft);
-        const int edited = proc.session().editedCount();
-        if (edited > 0)
-        {
-            const float nameW = juce::GlyphArrangement::getStringWidth (fontMono (15.0f), name);
-            g.setColour (led);
-            g.setFont (fontMono (12.0f));
-            g.drawText ("* " + juce::String (edited), in.withTrimmedLeft ((int) nameW + 8), juce::Justification::centredLeft);
-        }
+        g.drawText (juce::String (proc.session().name()), in, juce::Justification::centredLeft);  // edits: see the chip
     }
 
 private:
@@ -375,6 +398,68 @@ private:
         g.drawText ("Hover a control for help " + dot + " drag a source onto a knob", in, juce::Justification::centredLeft, true);
     }
 
+    void updateChip (int edited)
+    {
+        using namespace theme;
+        const juce::Colour grey (0xff808c98), blue (0xff5aa2f0);
+        const juce::String dot = juce::String::charToString ((juce::juce_wchar) 0x00B7);
+        auto& s = proc.session();
+        const auto& o = s.origin();
+        const juce::String slot = o.kind == PatchSession::Origin::Kind::Slot ? juce::String (slotLabel (o.bank, o.slot)) : juce::String();
+
+        if (s.pushState() == PatchSession::Push::Sending)
+            return chip.set (led, "SENDING", "Sending this patch to the Peak, then reading it back to check.");
+        if (s.pushState() == PatchSession::Push::Failed)
+            return chip.set (bad, "NOT SENT", "The Peak didn't get this patch: it is not connected or did not answer. "
+                                              "It is sent when the Peak is back (see the Setup tab).");
+        if (slot.isEmpty())
+            return chip.set (grey, "NOT SAVED", o.kind == PatchSession::Origin::Kind::File
+                                                    ? "From a file, not in a slot yet. Save puts it into one."
+                                                    : "Not in a slot the PC copy knows. Save puts it into one.");
+        if (edited > 0)
+        {
+            juce::StringArray what;
+            const auto& base = s.baselineValues();
+            const auto now = proc.params().values();
+            for (size_t i : differing (base, now))
+            {
+                if (what.size() == 6)
+                {
+                    what.add ("...");
+                    break;
+                }
+                const auto& d = paramTable()[i];
+                what.add (juce::String (d.name) + " " + juce::String (formatValue (d, base[i])) + " > "
+                          + juce::String (formatValue (d, now[i])));
+            }
+            return chip.set (led, "EDITED " + dot + " " + juce::String (edited),
+                             "Changed since " + slot + " was saved: " + what.joinIntoString (", ")
+                                 + ". Fetch goes back to the Peak's version; Compare lets you hear it.");
+        }
+        if (s.savedOnPcOnly())
+            return chip.set (blue, "PC ONLY", "Saved on this PC only: the Peak's " + slot
+                                                  + " still has an older version. Write it from the Presets tab.");
+        return chip.set (good, "SAVED", "The same as " + slot + " on the Peak"
+                                            + (proc.library().isPcOnly (o.bank, o.slot)
+                                                   ? ". The PC copy of " + slot + " has a newer version (Presets tab)."
+                                                   : juce::String (" and in the PC copy.")));
+    }
+
+    void openFile()
+    {
+        chooser = std::make_unique<juce::FileChooser> ("Load a .syx file", LibraryService::userFolder(), "*.syx");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this] (const juce::FileChooser& fc)
+        {
+            if (! fc.getResult().existsAsFile() || ! proc.library().openFile (fc.getResult()))
+                return;
+            if (proc.library().file().size() == 1)
+                proc.library().tryPatch (0);       // one patch: into the editor and onto the Peak
+            else if (bankFileOpened)
+                bankFileOpened();                  // a bank or a backup: the Presets tab shows it
+        });
+    }
+
     juce::String categoryText() const
     {
         const int i = indexOfId ("category");
@@ -398,10 +483,13 @@ private:
     PeakProcessor& proc;
     juce::StringArray names;
     std::function<void (int)> pageChanged;
+    std::function<void()> bankFileOpened;
     int page = 0;
     juce::TextButton prev { juce::CharPointer_UTF8 ("\xe2\x80\xb9") }, next { juce::CharPointer_UTF8 ("\xe2\x80\xba") };
-    juce::TextButton fetch { "Fetch" }, send { "Send" }, saveBtn { "Save" };
+    juce::TextButton fetch { "Fetch" }, loadBtn { "Load" }, saveBtn { "Save" };
     HoldButton compare { "Compare" };
+    StatusChip chip;
+    std::unique_ptr<juce::FileChooser> chooser;
     std::unique_ptr<ParamWidget> level;
     juce::String message, lastStatus, lastLib, lastKey, hover;
     double messageUntil = 0;
@@ -463,7 +551,7 @@ public:
             g.drawText (rows[r].label, name.removeFromTop (name.getHeight() / 2 + 2).withTrimmedTop (4), juce::Justification::bottomLeft);
             g.setColour (ink3);
             g.setFont (fontUi (9.5f, false));
-            g.drawText (juce::String (rows[r].ref.fx ? "FX slot " : "Slot ") + juce::String (rows[r].ref.slot) + (sel ? juce::String (" " "Â·" " selected") : juce::String()),
+            g.drawText (juce::String (rows[r].ref.fx ? "FX slot " : "Slot ") + juce::String (rows[r].ref.slot) + (sel ? juce::String (juce::CharPointer_UTF8 (" \xc2\xb7 selected")) : juce::String()),
                         name.withTrimmedTop (2), juce::Justification::topLeft);
         }
         g.setColour (juce::Colour (0xff0b0d10));
@@ -515,7 +603,7 @@ private:
             r.label = text ? text (ref) : juce::String();
             const auto k = (ref.fx ? "fxmod" : "mod") + std::to_string (ref.slot) + "_";
             r.depth = std::make_unique<ParamBar> (ctx, k + "depth");
-            r.remove = std::make_unique<juce::TextButton> (juce::CharPointer_UTF8 ("â"));
+            r.remove = std::make_unique<juce::TextButton> (juce::CharPointer_UTF8 ("\xe2\x9c\x95"));
             r.remove->setTooltip ("Remove this slot.");
             r.remove->onClick = [this, k, self = juce::Component::SafePointer<ModBubble> (this)]
             {
@@ -547,7 +635,46 @@ private:
     std::function<void()> matrix;
     juce::String title;
     std::vector<Row> rows;
-    juce::TextButton link { juce::CharPointer_UTF8 ("Open in Matrix âº") };
+    juce::TextButton link { juce::CharPointer_UTF8 ("Open in Matrix \xe2\x80\xba") };
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Covers the whole window of a second plugin copy: only the first copy talks to the Peak.
+
+class LockPage : public juce::Component
+{
+public:
+    explicit LockPage (PeakProcessor& p) : proc (p) { setInterceptsMouseClicks (true, true); }
+
+    void paint (juce::Graphics& g) override
+    {
+        using namespace theme;
+        g.fillAll (chassis.withAlpha (0.97f));
+        auto r = getLocalBounds().withSizeKeepingCentre (720, 220);
+        g.setColour (ink3);
+        g.drawEllipse ((float) r.getCentreX() - 24.0f, (float) r.getY(), 48.0f, 48.0f, 2.0f);
+        g.setFont (fontUi (22.0f));
+        g.drawText ("2", r.getCentreX() - 24, r.getY(), 48, 48, juce::Justification::centred);
+        r.removeFromTop (64);
+        const auto track = proc.mainTrack();
+        g.setColour (ink);
+        g.setFont (fontUi (19.0f));
+        g.drawText (track.isNotEmpty() ? "Peak Control is already open on track \"" + track + "\""
+                                       : juce::String ("Peak Control is already open in this project"),
+                    r.removeFromTop (30), juce::Justification::centred, true);
+        g.setColour (ink2);
+        g.setFont (fontBody (14.0f));
+        g.drawFittedText ("Only one copy can talk to the Peak, so the two don't fight over the sound. Use that one.\n"
+                          "This copy does nothing: its knobs, automation and notes are not sent.",
+                          r.removeFromTop (48), juce::Justification::centred, 2);
+        g.setColour (ink3);
+        g.setFont (fontBody (12.5f));
+        g.drawText ("If the other copy is removed, this one takes over by itself.", r.removeFromTop (24),
+                    juce::Justification::centred);
+    }
+
+private:
+    PeakProcessor& proc;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -579,8 +706,19 @@ PeakEditor::PeakEditor (PeakProcessor& p)
         names.add (pg.name);
         canvas.addChildComponent (*pg.comp);
     }
-    top = std::make_unique<TopBar> (proc, ctx, names, [this] (int i) { showPage (i); });
+    top = std::make_unique<TopBar> (proc, ctx, names, [this] (int i) { showPage (i); },
+                                    [this]
+                                    {
+                                        for (int i = 0; i < (int) pages.size(); ++i)
+                                            if (auto* pp = dynamic_cast<PresetsPage*> (pages[(size_t) i].comp.get()))
+                                            {
+                                                pp->showFile();
+                                                showPage (i);
+                                            }
+                                    });
     canvas.addAndMakeVisible (*top);
+    lock = std::make_unique<LockPage> (proc);
+    canvas.addChildComponent (*lock);
     addAndMakeVisible (canvas);
     canvas.setSize (theme::kWidth, theme::kHeight);
 
@@ -623,12 +761,21 @@ void PeakEditor::resized()
     const auto body = juce::Rectangle<int> (18, 64, theme::kWidth - 36, theme::kHeight - 64 - 10);
     for (auto& pg : pages)
         pg.comp->setBounds (body);
+    lock->setBounds (0, 0, theme::kWidth, theme::kHeight);
 }
 
 void PeakEditor::refreshNow() { timerCallback(); }
 
 void PeakEditor::timerCallback()
 {
+    const bool locked = ! proc.isMain();
+    if (lock->isVisible() != locked)
+    {
+        lock->setVisible (locked);
+        lock->toFront (false);
+    }
+    if (locked)
+        return;
     top->refresh();
     if (auto* r = dynamic_cast<Refreshable*> (pages[(size_t) current].comp.get()))
         r->refresh();

@@ -14,19 +14,25 @@ code layout: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   mockup. Settings that only live in the Peak's menus sit behind each panel's ▶.
 - **Live**: a change goes to the synth at once as CC or NRPN; knobs turned on the Peak move the editor.
   The few parameters with no MIDI number (FX mod matrix) are sent by rewriting the patch into the edit buffer.
-- **DAW**: every parameter can be automated; the project remembers the patch and the settings, and does not
-  overwrite the synth on load (use Send for that).
+- **The editor and the Peak always play the same sound.** When they meet (the Peak connects or comes back), a DAW
+  project that brought its own patch sends it to the Peak's edit buffer (never its memory); the standalone app and a
+  new plugin copy take the Peak's sound instead. Every parameter can be automated.
 - **Mod matrix**: 16 slots + 4 FX slots; drag a source (rail, envelope or LFO tab) onto a knob to fill a free slot;
   orange rings show modulated knobs.
-- **Fetch / Send**: read the Peak's current patch, or write the editor's into its edit buffer (not its memory).
+- **Top bar**: ‹ patch › with a status LED (Saved / Edited · n / PC only / Sending / Not sent / Not saved; hover for
+  details), **Fetch** (reload this slot as saved on the Peak), **Compare** (hold to hear the saved version),
+  **Load** (a .syx: one patch goes into the editor and the Peak; a bank or backup opens on the Presets tab) and
+  **Save** (into a slot on the Peak and the PC copy, after backing the slot up and reading it back; or on the PC only).
 - **Presets tab**: one list, two sources (never mixed).
-  - **Peak**: Read bank / Read all (read only; each finished read also saves a dated backup to
-    `Documents\Peak Control\Backups`), Load (program change), Save to file.
-  - **File**: Open a .syx (a patch, a bank or a backup); Try (plays it through the edit buffer, memory untouched),
+  - **Peak**: the PC copy of the Peak's 512 patches. First run offers to copy them all (read only). Read bank /
+    Read all (each finished read also saves a dated backup to `Documents\Peak Control\Backups`), Load, Export.
+    Slots saved on the PC only are marked; Write to Peak puts them on the synth. A slot the Peak switches to is read
+    again quietly, so saves made on the Peak itself show up.
+  - **File**: a .syx opened with Load; Try (plays it through the edit buffer, memory untouched),
     Copy to Peak (one slot), Send bank to Peak (backs the bank up first, writes 128 patches, reads them back and checks).
-- **Save** (top bar): the editor's patch into a slot you pick, after backing the slot up, then reading it back. Or to a
-  .syx file.
-- **Setup tab**: ports, MIDI channel, output straight to the port or through the DAW, a connection checklist.
+- **One copy talks to the Peak**: a second plugin copy in the same project shows a page that points to the first one.
+- **Setup tab**: ports, MIDI channel, output straight to the port or through the DAW, a connection verdict, and a
+  scrolling monitor of everything the Peak sends (Copy puts it on the clipboard).
 - **Playheads (off by default)**: an "approx" dot on LFO 1/2 in Sync range, following the DAW; a gate light on the
   envelopes for notes passing through the plugin.
 

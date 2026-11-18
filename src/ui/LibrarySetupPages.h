@@ -11,6 +11,21 @@
 #include <deque>
 #include <functional>
 
+// The monitor's lines, newest first, drawn in a scrolling viewport (the Setup page owns the lines).
+class MonitorList : public juce::Component
+{
+public:
+    static constexpr int kRowH = 17;
+    MonitorList (const std::deque<PeakLink::MonitorLine>& l, std::function<int()> pluginChannel)
+        : lines (l), channel (std::move (pluginChannel)) {}
+    void paint (juce::Graphics&) override;
+    static juce::String text (const PeakLink::MonitorLine&);  // one line as plain text (for Copy)
+
+private:
+    const std::deque<PeakLink::MonitorLine>& lines;
+    std::function<int()> channel;
+};
+
 class SetupPage : public juce::Component, public Refreshable
 {
 public:
@@ -40,7 +55,10 @@ private:
 
     std::deque<PeakLink::MonitorLine> monitorLines;  // newest first
     uint32_t monitorSeen = 0;
-    juce::TextButton clearMonitor { "Clear" };
+    MonitorList monitorList { monitorLines, [this] { return proc.midiChannel(); } };
+    juce::Viewport monitorView;
+    juce::TextButton clearMonitor { "Clear" }, copyMonitor { "Copy" };
+    void layoutMonitor (int added);
 
     juce::Rectangle<int> verdictArea, stepsArea, monitorArea;
 };

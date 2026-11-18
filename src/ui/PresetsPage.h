@@ -1,5 +1,6 @@
 // The Presets tab: one list, two sources (never mixed).
-//   Peak  the synth's patches as last read. Read bank / Read all (saves a dated backup), Load, Save to file.
+//   Peak  the PC copy of the synth's 4 x 128 patches. Read bank / Read all (saves a dated backup), Load, Export.
+//         A slot saved "on PC only" is marked, and Write to Peak puts it on the synth.
 //   File  a .syx opened from disk. Try (edit buffer only), Copy to Peak (one slot), Send bank to Peak.
 // Every write to the synth's memory asks first and runs with a backup and a read-back (LibraryService).
 #pragma once
@@ -14,6 +15,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     void refresh() override;
+    void showFile();  // a .syx with many patches was opened elsewhere (the top bar's Load)
 
 private:
     enum class Source { Peak, File };
@@ -41,7 +43,13 @@ private:
     juce::TextButton peakTab { "Peak" }, fileTab { "File" };
     // Peak
     juce::ComboBox bankBox;
-    juce::TextButton readBank { "Read bank" }, readAll { "Read all" }, saveFile { "Save to file..." };
+    juce::TextButton readBank { "Read bank" }, readAll { "Read all" }, saveFile { "Export..." };
+    juce::TextButton writeBtn { "Write to Peak" };   // a slot whose newest version is on the PC only
+    // First run: offer to copy all 512 patches to the PC.
+    juce::TextButton copyAllBtn { "Copy all" }, notNow { "Not now" };
+    bool offerShown = false;
+    juce::Rectangle<int> offerArea;
+    void writeSelected();
     // File
     juce::TextButton openBtn { "Open file..." }, copyBtn { "Copy to Peak..." }, sendBtn { "Send bank to Peak..." };
     juce::ComboBox fileBankBox;

@@ -10,6 +10,7 @@
 #include <vector>
 
 class TopBar;
+class LockPage;
 
 class PeakEditor : public juce::AudioProcessorEditor, public juce::DragAndDropContainer, private juce::Timer
 {
@@ -36,6 +37,7 @@ private:
     UiContext ctx;
     juce::Component canvas;
     std::unique_ptr<TopBar> top;
+    std::unique_ptr<LockPage> lock;  // over everything in a second plugin copy
     struct Page
     {
         juce::String name;

@@ -2,6 +2,7 @@
 
 #include "core/Library.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -258,6 +259,34 @@ void PeakLink::log (int channel, const juce::String& what, const juce::String& n
 {
     ++monitorSeq;
     monitor[monitorSeq % monitor.size()] = { monitorSeq, juce::Time::currentTimeMillis(), channel, what, name };
+}
+
+void PeakLink::addClient (const void* id)
+{
+    const juce::ScopedLock sl (stateLock);
+    clients.push_back ({ id, {} });
+    mainClient = clients.front().first;
+}
+
+void PeakLink::removeClient (const void* id)
+{
+    const juce::ScopedLock sl (stateLock);
+    clients.erase (std::remove_if (clients.begin(), clients.end(), [id] (const auto& c) { return c.first == id; }), clients.end());
+    mainClient = clients.empty() ? nullptr : clients.front().first;
+}
+
+void PeakLink::setClientTrack (const void* id, const juce::String& trackName)
+{
+    const juce::ScopedLock sl (stateLock);
+    for (auto& c : clients)
+        if (c.first == id)
+            c.second = trackName;
+}
+
+juce::String PeakLink::mainTrack() const
+{
+    const juce::ScopedLock sl (stateLock);
+    return clients.empty() ? juce::String() : clients.front().second;
 }
 
 uint32_t PeakLink::readMonitor (uint32_t afterSeq, std::vector<MonitorLine>& out) const

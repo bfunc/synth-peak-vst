@@ -482,6 +482,7 @@ void OscRow::refresh()
         w[k + "shape"].setVisible (src == 0);
         w[k + "env1_shape"].setVisible (src == 1);
         w[k + "lfo1_shape"].setVisible (src == 2);
+        repaint();  // the hint under the Shape knob
     }
     // Saw density / detune only with the saw wave; detune greyed while density is 0.
     const int wv = val ("wave");
@@ -491,6 +492,7 @@ void OscRow::refresh()
         w[k + "saw_density"].setVisible (wv == 2);
         w[k + "saw_detune"].setVisible (wv == 2);
         resized();
+        repaint();  // the hint under the Shape knob
     }
     const int dens = val ("saw_density");
     if (dens != lastDensity)
@@ -560,6 +562,23 @@ void OscRow::paint (juce::Graphics& g)
     g.setColour (edge);
     for (int i = 1; i < 6; ++i)
         g.drawVerticalLine (col[(size_t) i].getX() - 6, 8.0f, (float) getHeight() - 8);
+
+    // Under the Shape knob: what it does now. The knob keeps the Peak's name; this depends on the wave and on the
+    // Shape source (with Mod Env 1 or LFO 1 it is a modulation depth, orange like the mod rings).
+    const auto k = "osc" + std::to_string (n) + "_";
+    auto val = [&] (const std::string& id) { return ctx.params.value ((size_t) indexOfId (k + id)); };
+    const int src = juce::jlimit (0, 2, val ("shape_src")), wv = val ("wave");
+    if (auto* knob = w.get (k + (src == 0 ? "shape" : (src == 1 ? "env1_shape" : "lfo1_shape"))))
+    {
+        static const char* kind[3][3] = { { "harmonics", "shape \xc2\xb7 env 1", "shape \xc2\xb7 LFO 1" },
+                                          { "pulse width", "PWM \xc2\xb7 env 1", "PWM \xc2\xb7 LFO 1" },
+                                          { "morph", "morph \xc2\xb7 env 1", "morph \xc2\xb7 LFO 1" } };
+        const int row = wv == 3 ? 1 : (wv == 4 ? 2 : 0);
+        g.setColour (src == 0 ? accent.withAlpha (0.75f) : led);
+        g.setFont (fontUi (10.0f, false).withExtraKerningFactor (0.04f));
+        g.drawText (juce::String (juce::CharPointer_UTF8 (kind[row][src])),
+                    knob->getBounds().withY (knob->getBottom()).withHeight (13).expanded (16, 0), juce::Justification::centred);
+    }
 }
 
 // ---- OscSection ----

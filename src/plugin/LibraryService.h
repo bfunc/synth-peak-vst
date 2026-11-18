@@ -17,6 +17,8 @@
 #include "plugin/PatchSession.h"
 
 #include <memory>
+#include <set>
+#include <utility>
 #include <vector>
 
 class LibraryService
@@ -47,13 +49,31 @@ public:
     void sendBank (int fileBank, int targetBank);              // writes a bank (backup, write, check)
 
     // ---- the editor's patch ----
-    void saveToSlot (int bank, int slot, const std::string& name);  // the top bar's Save
-    bool exportPatch (const juce::File&) const;
+    void saveToSlot (int bank, int slot, const std::string& name);  // the top bar's Save: the Peak and the PC copy
+    void saveOnPcOnly (int bank, int slot, const std::string& name);  // the PC copy only; the Peak's slot stays older
+
+    // ---- slots whose newest version is on the PC only ----
+    bool isPcOnly (int bank, int slot) const { return pcOnly.count (key (bank, slot)) > 0; }
+    int pcOnlyCount() const { return (int) pcOnly.size(); }
+    void writeToPeak (int bank, int slot);   // the PC version into the Peak's slot (backup, write, check)
+
+    // ---- first run: offer to copy all 512 patches to the PC ----
+    bool offerFirstCopy() const;
+    void copyAll();                          // read all banks (read only) and stop offering
+    void dismissFirstCopy();
+
+    // A stored patch identical to `data` (which slot an edit buffer came from); {0, 0} when none.
+    std::pair<int, int> findSlot (const peak::PatchData& data) const;
+
+    void resync();                           // skip what arrived while this copy was not the main one
 
     static juce::File userFolder();      // Documents/Peak Control
     static juce::File backupFolder();    // .../Backups
 
 private:
+    static int key (int bank, int slot) { return bank * 1000 + slot; }
+    void loadPcOnly();
+    void savePcOnly() const;
     void loadCache();
     void saveCache() const;
     void startSlotWrite (int bank, int slot, const peak::PatchData&, bool fromEditor);
@@ -74,4 +94,9 @@ private:
 
     std::vector<peak::Library::Entry> fileEntries;
     juce::String fileTitle;
+
+    std::set<int> pcOnly;                // key (bank, slot)
+    uint32_t programSeen = 0;            // the Peak switched slots: read that slot again, quietly
+    double rereadAtMs = -1;
+    int rereadBank = 0, rereadSlot = 0;
 };

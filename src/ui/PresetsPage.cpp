@@ -6,7 +6,8 @@ using namespace peak;
 
 namespace
 {
-enum Col { ColSlot = 1, ColName, ColCategory };
+enum Col { ColSlot = 1, ColName, ColCategory, ColState };
+constexpr int kOfferH = 46;
 constexpr int kAllBanks = 9, kSingles = 10;
 
 juce::String bankLetter (int b) { return juce::String::charToString ((juce::juce_wchar) ('A' + juce::jlimit (1, 4, b) - 1)); }
@@ -78,6 +79,7 @@ PresetsPage::PresetsPage (PeakProcessor& p) : proc (p)
     h.addColumn ("Slot", ColSlot, 80);
     h.addColumn ("Name", ColName, 260);
     h.addColumn ("Category", ColCategory, 140);
+    h.addColumn ("State", ColState, 300);
     h.setColour (juce::TableHeaderComponent::backgroundColourId, theme::panelHi);
     h.setColour (juce::TableHeaderComponent::textColourId, theme::ink2);
     table.setModel (this);
@@ -85,8 +87,15 @@ PresetsPage::PresetsPage (PeakProcessor& p) : proc (p)
     table.setColour (juce::ListBox::backgroundColourId, theme::panel);
 
     readBank.setTooltip ("Read the selected bank from the Peak (read only) and save a backup .syx");
-    readAll.setTooltip ("Read all four banks from the Peak (read only, about 1 minute) and save a backup .syx");
-    saveFile.setTooltip ("Save the shown bank (or all banks) to a .syx file");
+    readAll.setTooltip ("Read all four banks from the Peak (read only, about 4 minutes) and save a backup .syx");
+    saveFile.setTooltip ("Export the shown bank (or all banks) of the PC copy to a .syx file");
+    writeBtn.setTooltip ("Write the PC version of this slot into the Peak (the Peak's slot is backed up first, then read back)");
+    copyAllBtn.setTooltip ("Read all 512 patches from the Peak into the PC copy (read only, about 4 minutes)");
+    writeBtn.onClick = [this] { writeSelected(); };
+    copyAllBtn.onClick = [this] { proc.library().copyAll(); };
+    notNow.onClick = [this] { proc.library().dismissFirstCopy(); };
+    addChildComponent (copyAllBtn);
+    addChildComponent (notNow);
     openBtn.setTooltip ("Open a .syx: one patch, a bank or a full backup");
     copyBtn.setTooltip ("Write the selected patch into a slot on the Peak (the slot is backed up first)");
     sendBtn.setTooltip ("Write a whole bank from this file into the Peak (the bank is backed up first)");
@@ -111,9 +120,33 @@ PresetsPage::PresetsPage (PeakProcessor& p) : proc (p)
                                 (juce::Component*) &saveFile, (juce::Component*) &openBtn, (juce::Component*) &copyBtn,
                                 (juce::Component*) &sendBtn, (juce::Component*) &fileBankBox, (juce::Component*) &stop,
                                 (juce::Component*) &loadBtn, (juce::Component*) &categoryBox, (juce::Component*) &search,
-                                (juce::Component*) &hideUnread, (juce::Component*) &table, (juce::Component*) &bar })
+                                (juce::Component*) &hideUnread, (juce::Component*) &table, (juce::Component*) &bar,
+                                (juce::Component*) &writeBtn })
         addAndMakeVisible (c);
     setSource (Source::Peak);
+}
+
+void PresetsPage::showFile() { setSource (Source::File); }
+
+void PresetsPage::writeSelected()
+{
+    const int r = selectedRow();
+    if (r < 0 || source != Source::Peak)
+        return;
+    const int b = rows[(size_t) r] / kSlots, s = rows[(size_t) r] % kSlots;
+    if (! proc.library().isPcOnly (b, s))
+        return;
+    const auto& e = proc.library().library().at (b, s);
+    juce::AlertWindow::showOkCancelBox (
+        juce::MessageBoxIconType::WarningIcon, "Write " + juce::String (slotLabel (b, s)) + " to the Peak",
+        "Write the PC version \"" + juce::String (e.name) + "\" into " + slotLabel (b, s)
+            + " on the Peak?\nThe Peak's older version is backed up first.",
+        "Write", "Cancel", nullptr,
+        juce::ModalCallbackFunction::create ([this, b, s] (int ok)
+        {
+            if (ok == 1)
+                proc.library().writeToPeak (b, s);
+        }));
 }
 
 void PresetsPage::setSource (Source s)
@@ -123,13 +156,13 @@ void PresetsPage::setSource (Source s)
     fileTab.setToggleState (s == Source::File, juce::dontSendNotification);
     const bool peak = s == Source::Peak;
     for (juce::Component* c : { (juce::Component*) &bankBox, (juce::Component*) &readBank, (juce::Component*) &readAll,
-                                (juce::Component*) &saveFile, (juce::Component*) &hideUnread })
+                                (juce::Component*) &saveFile, (juce::Component*) &hideUnread, (juce::Component*) &writeBtn })
         c->setVisible (peak);
     for (juce::Component* c : { (juce::Component*) &openBtn, (juce::Component*) &copyBtn, (juce::Component*) &sendBtn,
                                 (juce::Component*) &fileBankBox })
         c->setVisible (! peak);
     loadBtn.setButtonText (peak ? "Load" : "Try");
-    loadBtn.setTooltip (peak ? "Switch the Peak to this patch (program change)"
+    loadBtn.setTooltip (peak ? "Load this slot into the editor and the Peak (a slot marked PC only loads its PC version)"
                              : "Play this patch through the edit buffer; the Peak's memory is not changed");
     table.getHeader().setColumnName (ColSlot, peak ? "Slot" : "From");
     table.deselectAllRows();
@@ -204,6 +237,13 @@ void PresetsPage::updateButtons()
     copyBtn.setEnabled (! busy && sel && source == Source::File);
     sendBtn.setEnabled (! busy && ! lib.fileBanks().empty());
     loadBtn.setEnabled (! busy && sel);
+    bool pc = false;
+    if (sel && source == Source::Peak)
+    {
+        const int k = rows[(size_t) selectedRow()];
+        pc = lib.isPcOnly (k / kSlots, k % kSlots);
+    }
+    writeBtn.setEnabled (! busy && pc);
     stop.setVisible (busy);
     bar.setVisible (busy && lib.progress() >= 0);
     fileTab.setButtonText (lib.hasFile() ? "File: " + lib.fileName() : juce::String ("File"));
@@ -212,6 +252,15 @@ void PresetsPage::updateButtons()
 void PresetsPage::refresh()
 {
     auto& lib = proc.library();
+    const bool offer = lib.offerFirstCopy() && ! lib.busy();
+    if (offer != offerShown)
+    {
+        offerShown = offer;
+        copyAllBtn.setVisible (offer);
+        notNow.setVisible (offer);
+        resized();
+        repaint();
+    }
     if (lib.revision() != seenRev)
         rebuild();
     const auto origin = proc.session().originText();
@@ -256,6 +305,17 @@ void PresetsPage::paintCell (juce::Graphics& g, int row, int col, int w, int h, 
         case ColSlot: text = e->bank >= 1 ? juce::String (slotLabel (e->bank, e->slot)) : "patch " + juce::String (e->slot + 1); break;
         case ColName: text = e->loaded ? juce::String (e->name) : juce::String ("(not read)"); break;
         case ColCategory: text = e->category; break;
+        case ColState:
+            if (source == Source::Peak && proc.library().isPcOnly (e->bank, e->slot))
+            {
+                const juce::Colour blue (0xff5aa2f0);
+                g.setColour (blue);
+                g.fillEllipse (8.0f, (float) h / 2.0f - 3.5f, 7.0f, 7.0f);
+                g.setFont (theme::fontUi (12.5f, false));
+                g.drawText ("PC only " + juce::String::charToString ((juce::juce_wchar) 0x00B7) + " the Peak has an older version",
+                            22, 0, w - 24, h, juce::Justification::centredLeft, true);
+            }
+            return;
         default: break;
     }
     g.setColour (current ? theme::accent : (e->loaded ? theme::ink : theme::ink3));
@@ -271,7 +331,13 @@ void PresetsPage::loadSelected()
     if (r < 0 || proc.library().busy())
         return;
     if (source == Source::Peak)
-        proc.session().loadSlot (rows[(size_t) r] / kSlots, rows[(size_t) r] % kSlots);
+    {
+        const int b = rows[(size_t) r] / kSlots, s = rows[(size_t) r] % kSlots;
+        if (proc.library().isPcOnly (b, s))
+            proc.session().loadFromPc (b, s, proc.library().library().at (b, s).data);  // the PC version
+        else
+            proc.session().loadSlot (b, s);  // program change: the Peak plays its stored patch, the editor reads it
+    }
     else
         proc.library().tryPatch ((size_t) rows[(size_t) r]);
 }
@@ -356,6 +422,16 @@ void PresetsPage::sendBank()
 void PresetsPage::resized()
 {
     auto r = getLocalBounds().reduced (16, 12);
+    offerArea = {};
+    if (offerShown)
+    {
+        offerArea = r.removeFromTop (kOfferH);
+        auto b = offerArea.reduced (12, 9);
+        notNow.setBounds (b.removeFromRight (90));
+        b.removeFromRight (8);
+        copyAllBtn.setBounds (b.removeFromRight (100));
+        r.removeFromTop (12);
+    }
     auto top = r.removeFromTop (30);
     peakTab.setBounds (top.removeFromLeft (90));
     fileTab.setBounds (top.removeFromLeft (220));
@@ -368,7 +444,9 @@ void PresetsPage::resized()
         readBank.setBounds (a.removeFromLeft (100));
         a.removeFromLeft (6);
         readAll.setBounds (a.removeFromLeft (90));
-        saveFile.setBounds (a.removeFromRight (120));
+        saveFile.setBounds (a.removeFromRight (100));
+        a.removeFromRight (6);
+        writeBtn.setBounds (a.removeFromRight (120));
     }
     // File actions
     {
@@ -401,6 +479,22 @@ void PresetsPage::paint (juce::Graphics& g)
 {
     g.fillAll (theme::chassis);
     auto& lib = proc.library();
+    if (offerShown && ! offerArea.isEmpty())
+    {
+        g.setColour (juce::Colour (0xff14232d));
+        g.fillRoundedRectangle (offerArea.toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xff2f5a72));
+        g.drawRoundedRectangle (offerArea.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        auto t = offerArea.reduced (16, 0).withTrimmedRight (220);
+        g.setColour (theme::ink);
+        g.setFont (theme::fontUi (13.5f));
+        g.drawText ("Make a copy of your Peak's 512 patches on this PC.", t.removeFromTop (offerArea.getHeight() / 2 + 2),
+                    juce::Justification::bottomLeft, true);
+        g.setColour (theme::ink2);
+        g.setFont (theme::fontBody (12.0f));
+        g.drawText ("Read only, about 4 minutes; you can keep editing. Save, Fetch and the PC-only marks build on it.", t,
+                    juce::Justification::topLeft, true);
+    }
     g.setColour (theme::ink2);
     g.setFont (theme::fontUi (12.5f, false));
     juce::String s = lib.statusText();

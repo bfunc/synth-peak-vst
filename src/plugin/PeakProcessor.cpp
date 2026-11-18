@@ -14,6 +14,9 @@ const juce::Identifier kNotesThru { "notesThru" };
 const juce::Identifier kPlayheads { "playheads" };
 const juce::Identifier kFollow { "followChannel" };
 double now() { return juce::Time::getMillisecondCounterHiRes(); }
+// TrackProperties::name is a String in older JUCE and an optional in newer ones.
+[[maybe_unused]] juce::String nameOf (const juce::String& n) { return n; }
+[[maybe_unused]] juce::String nameOf (const std::optional<juce::String>& n) { return n.value_or (juce::String()); }
 } // namespace
 
 PeakProcessor::PeakProcessor()
@@ -25,6 +28,10 @@ PeakProcessor::PeakProcessor()
     patch = std::make_unique<PatchSession> (*peakLink, *this);
     lib = std::make_unique<LibraryService> (*peakLink, *patch);
     paramCursor = peakLink->paramSeq();
+    // In a DAW the project's patch is the one to keep; the standalone app takes the Peak's sound on start.
+    patch->setEditorIsMaster (! juce::JUCEApplicationBase::isStandaloneApp());
+    patch->findSlot = [this] (const PatchData& d) { return lib->findSlot (d); };
+    peakLink->addClient (this);
 
     // A new plugin (and the standalone app) talks to the synth's port itself; a saved state brings its own choice.
     setHostOutput (false);
@@ -36,7 +43,10 @@ PeakProcessor::~PeakProcessor()
 {
     stopTimer();
     pump.stopThread (1000);
+    peakLink->removeClient (this);
 }
+
+void PeakProcessor::updateTrackProperties (const TrackProperties& p) { peakLink->setClientTrack (this, nameOf (p.name)); }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Sending
@@ -56,7 +66,7 @@ void PeakProcessor::runSync (EmitCc&& emitCc)
 
 void PeakProcessor::pumpDirect()
 {
-    if (peakLink->isHostOutput() || ! peakLink->isOutputOpen())
+    if (peakLink->isHostOutput() || ! peakLink->isOutputOpen() || ! isMain())
         return;
 
     // Notes first: they are time-critical.
@@ -147,6 +157,11 @@ void PeakProcessor::readTransport()
 void PeakProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi)
 {
     audio.clear();
+    if (! isMain())
+    {
+        midi.clear();  // another copy talks to the Peak: this one sends nothing
+        return;
+    }
     readTransport();
 
     const bool host = peakLink->isHostOutput();
@@ -176,6 +191,21 @@ void PeakProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuf
 void PeakProcessor::timerCallback()
 {
     const double t = now();
+
+    // Not the main copy: skip everything from the Peak; on taking over, start from now and meet the Peak afresh.
+    if (! isMain())
+    {
+        wasMain = false;
+        paramCursor = peakLink->paramSeq();
+        return;
+    }
+    if (! wasMain)
+    {
+        wasMain = true;
+        paramCursor = peakLink->paramSeq();
+        patch->resync();
+        lib->resync();
+    }
 
     // Knobs turned on the synth: show them, don't send them back.
     std::vector<PeakLink::ParamIn> in;
@@ -329,7 +359,7 @@ void PeakProcessor::setStateInformation (const void* data, int size)
     notesThru = (bool) apvts.state.getProperty (kNotesThru, true);
     playheads = (bool) apvts.state.getProperty (kPlayheads, false);
     followChannel = (bool) apvts.state.getProperty (kFollow, true);
-    primeRequested = true;  // a loaded project does not overwrite the synth; Send does that
+    primeRequested = true;  // no live CCs for the loaded values: PatchSession sends the whole patch once it settles
 }
 
 juce::AudioProcessorEditor* PeakProcessor::createEditor() { return new PeakEditor (*this); }

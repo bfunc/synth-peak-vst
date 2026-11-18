@@ -9,7 +9,7 @@ On the Peak: Settings → CC/NRPN = **Rec+Trans**, note the MIDI channel. Close 
 | # | Step | Sends | Expect / note down |
 |---|---|---|---|
 | 1 | Setup tab: checklist | identity request (read only) | "Input: Peak", "Output: Peak", "Peak found, firmware 2.1.0.8" |
-| 2 | Fetch (top bar) | edit-buffer request (read only) | patch name in the display; Voice knobs, mod matrix (Matrix tab) match the synth |
+| 2 | Start the standalone app (it reads the Peak's sound by itself) | edit-buffer request (read only) | patch name in the display; Voice knobs, mod matrix (Matrix tab) match the synth |
 | 3 | Turn knobs on the Peak (cutoff, resonance, an envelope, osc coarse) | nothing | the same knobs move in the editor. Coarse / cutoff use 0–255 CC pairs: do they land on the same value? |
 | 4 | Turn knobs in the editor: cutoff, resonance, amp attack | CC / CC pairs | the sound changes; **listen for zipper / jumps on cutoff** (0–255 pair coding) |
 | 5 | Change NRPN parameters: filter shape, LFO 1 wave, arp on, a mod-matrix slot | NRPN | the sound / OLED follows |

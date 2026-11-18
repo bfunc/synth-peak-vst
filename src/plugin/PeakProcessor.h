@@ -67,6 +67,10 @@ public:
     LibraryService& library() { return *lib; }
     PeakLink& link() { return *peakLink; }
     peak::LinkStatus linkStatus() const { return peakLink->status (channel.load(), followChannel.load()); }
+    // Only the main copy talks to the Peak; another copy in the same program shows a lock page.
+    bool isMain() const { return peakLink->isMain (this); }
+    juce::String mainTrack() const { return peakLink->mainTrack(); }
+    void updateTrackProperties (const TrackProperties&) override;
     const UiFeed& feed() const { return uiFeed; }
 
     struct Settings
@@ -143,6 +147,7 @@ private:
     std::array<uint32_t, 512> noteBuf {};    // packed status | d1 << 8 | d2 << 16
 
     uint32_t paramCursor = 0;                // message thread: last PeakLink param seq applied
+    bool wasMain = false;                    // message thread
     juce::MidiBuffer outBuf;                 // audio thread: what goes to the host output (allocated once)
 
     Pump pump { *this };

@@ -99,6 +99,14 @@ public:
 
     peak::LinkStatus status (int pluginChannel, bool followChannel = true) const;
 
+    // ---- plugin copies (message thread) ----
+    // Only one copy talks to the Peak: the first one; when it goes, the next takes over. The others show a lock page.
+    void addClient (const void* id);
+    void removeClient (const void* id);
+    bool isMain (const void* id) const { return mainClient.load() == id; }  // any thread
+    void setClientTrack (const void* id, const juce::String& trackName);
+    juce::String mainTrack() const;                                          // "" when the host did not tell
+
 private:
     void log (int channel, const juce::String& what, const juce::String& name);  // caller holds stateLock
     PeakLink();
@@ -144,8 +152,11 @@ private:
     std::deque<PatchIn> patchesIn;      // (S), the last 160
     uint32_t patchInSeq = 0;            // (S)
     ProgramIn programIn;                // (S)
-    std::array<MonitorLine, 64> monitor;  // ring (S)
+    std::array<MonitorLine, 256> monitor;  // ring (S)
     uint32_t monitorSeq = 0;              // (S)
+
+    std::vector<std::pair<const void*, juce::String>> clients;  // (S), in the order they came
+    std::atomic<const void*> mainClient { nullptr };
 
     double testNoteOffMs = -1;  // message thread
     int testNoteChannel = 1;

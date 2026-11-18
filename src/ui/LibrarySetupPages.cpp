@@ -10,7 +10,7 @@ constexpr int kLeftW = 440;
 constexpr int kGap = 40;
 constexpr int kVerdictH = 96;
 constexpr int kMonitorH = 214;
-constexpr size_t kMonitorKept = 60;
+constexpr size_t kMonitorKept = 200;
 
 void sectionTitle (juce::Graphics& g, const juce::String& t, juce::Rectangle<int> r)
 {
@@ -110,8 +110,21 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
     clearMonitor.onClick = [this]
     {
         monitorLines.clear();
+        layoutMonitor (0);
         repaint (monitorArea);
     };
+    copyMonitor.setTooltip ("Copy every line of the monitor, to paste into a message or a note.");
+    copyMonitor.onClick = [this]
+    {
+        juce::StringArray all;
+        for (const auto& l : monitorLines)
+            all.add (MonitorList::text (l));
+        juce::SystemClipboard::copyTextToClipboard (all.joinIntoString ("\n"));
+    };
+    monitorView.setViewedComponent (&monitorList, false);
+    monitorView.setScrollBarsShown (true, false);
+    monitorView.setScrollBarThickness (10);
+    addAndMakeVisible (monitorView);
 
     for (size_t i = 0; i < verdictButtons.size(); ++i)
     {
@@ -127,7 +140,8 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
     for (juce::Component* c : { (juce::Component*) &inBox, (juce::Component*) &outBox, (juce::Component*) &channelBox,
                                 (juce::Component*) &modeBox, (juce::Component*) &follow, (juce::Component*) &notesThru,
                                 (juce::Component*) &playheads, (juce::Component*) &check, (juce::Component*) &sendAll,
-                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &clearMonitor })
+                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &clearMonitor,
+                                (juce::Component*) &copyMonitor })
         addAndMakeVisible (c);
 }
 
@@ -183,8 +197,19 @@ void SetupPage::refresh()
             monitorLines.push_front (std::move (l));
         while (monitorLines.size() > kMonitorKept)
             monitorLines.pop_back();
-        repaint (monitorArea);
+        layoutMonitor ((int) fresh.size());
     }
+}
+
+// Newest lines go on top. Scrolled down to read older ones: keep the same lines in view; at the top: follow live.
+void SetupPage::layoutMonitor (int added)
+{
+    const int y = monitorView.getViewPositionY();
+    monitorList.setSize (juce::jmax (1, monitorView.getMaximumVisibleWidth()),
+                         juce::jmax (monitorView.getHeight(), 12 + (int) monitorLines.size() * MonitorList::kRowH));
+    if (y > 0)
+        monitorView.setViewPosition (0, y + added * MonitorList::kRowH);
+    monitorList.repaint();
 }
 
 void SetupPage::updateVerdictButtons()
@@ -280,7 +305,11 @@ void SetupPage::resized()
             verdictButtons[(size_t) i].setBounds (buttons.removeFromRight (124).withSizeKeepingCentre (124, 28));
             buttons.removeFromRight (8);
         }
-    clearMonitor.setBounds (monitorArea.withHeight (32).removeFromRight (80).reduced (10, 5));
+    auto monBar = monitorArea.withHeight (32);
+    clearMonitor.setBounds (monBar.removeFromRight (80).reduced (10, 5));
+    copyMonitor.setBounds (monBar.removeFromRight (70).reduced (4, 5).translated (8, 0));
+    monitorView.setBounds (monitorArea.withTrimmedTop (32).reduced (1, 0).withTrimmedBottom (1));
+    layoutMonitor (0);
 }
 
 void SetupPage::paint (juce::Graphics& g)
@@ -397,35 +426,46 @@ void SetupPage::paintMonitor (juce::Graphics& g)
 {
     using namespace theme;
     panelBox (g, monitorArea);
-    auto r = monitorArea;
-    auto bar = r.removeFromTop (32).withTrimmedRight (80).reduced (16, 0);
+    auto bar = monitorArea.withHeight (32).withTrimmedRight (150).reduced (16, 0);
     g.setColour (ink);
     g.setFont (fontUi (13.0f));
-    const juce::String title = "FROM THE PEAK";
-    g.drawText (title, bar, juce::Justification::centredLeft);
+    g.drawText ("FROM THE PEAK", bar, juce::Justification::centredLeft);
     g.setColour (ink3);
     g.setFont (fontBody (12.0f));
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("newest first \xc2\xb7 turn a knob on the Peak to see what it sends")),
-                bar.withTrimmedLeft (120), juce::Justification::centredLeft);
+    g.drawText (juce::String (juce::CharPointer_UTF8 ("newest first \xc2\xb7 scroll for older lines \xc2\xb7 turn a knob on the Peak")),
+                bar.withTrimmedLeft (120), juce::Justification::centredLeft, true);
+}
 
-    auto lines = r.reduced (1, 0).withTrimmedBottom (1);
-    g.setColour (well);
-    g.fillRect (lines);
-    lines = lines.reduced (16, 6);
-    if (monitorLines.empty())
+juce::String MonitorList::text (const PeakLink::MonitorLine& l)
+{
+    return juce::Time (l.timeMs).formatted ("%H:%M:%S") + "  " + (l.channel > 0 ? "ch " + juce::String (l.channel) : juce::String ("--"))
+         + "  " + l.what + "  " + l.name;
+}
+
+void MonitorList::paint (juce::Graphics& g)
+{
+    using namespace theme;
+    g.fillAll (well);
+    auto lines = getLocalBounds().reduced (16, 6);
+    if (lines.isEmpty())
+        return;
+    if (this->lines.empty())
     {
         g.setColour (ink3);
         g.setFont (fontBody (13.0f));
         g.drawText ("Nothing from the Peak yet.", lines.removeFromTop (22), juce::Justification::centredLeft);
         return;
     }
-    const int pluginCh = proc.midiChannel();
+    const int pluginCh = channel ? channel() : 0;
+    const auto clip = g.getClipBounds();
     g.setFont (fontMono (12.0f));
-    for (const auto& l : monitorLines)
+    for (const auto& l : this->lines)
     {
-        if (lines.getHeight() < 17)
+        auto row = lines.removeFromTop (kRowH);
+        if (row.getBottom() < clip.getY())
+            continue;
+        if (row.getY() > clip.getBottom())
             break;
-        auto row = lines.removeFromTop (17);
         const bool otherCh = l.channel > 0 && l.channel != pluginCh;
         g.setColour (ink3);
         g.drawText (juce::Time (l.timeMs).formatted ("%H:%M:%S"), row.removeFromLeft (78), juce::Justification::centredLeft);
@@ -433,7 +473,7 @@ void SetupPage::paintMonitor (juce::Graphics& g)
         g.drawText (l.channel > 0 ? "ch " + juce::String (l.channel) : juce::String ("--"), row.removeFromLeft (52),
                     juce::Justification::centredLeft);
         g.setColour (ink2);
-        g.drawText (l.what, row.removeFromLeft (200), juce::Justification::centredLeft, true);
+        g.drawText (l.what, row.removeFromLeft (170), juce::Justification::centredLeft, true);
         g.setColour (otherCh ? led : ink);
         g.drawText (l.name, row, juce::Justification::centredLeft, true);
     }
