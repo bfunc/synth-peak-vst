@@ -107,16 +107,6 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
                          "Tells \"nothing reaches the Peak\" from \"the Peak's replies don't come back\".");
     testNote.onClick = [this] { proc.link().playTestNote (proc.midiChannel()); };
 
-    watchBox.addItem ("Off", 1);
-    watchBox.addItem ("Every 2 s", 2);
-    watchBox.addItem ("Every 0.25 s (stress test)", 3);
-    watchBox.setSelectedId ((int) proc.session().getWatch() + 1, juce::dontSendNotification);
-    watchBox.setTooltip ("A change made on the Peak may send nothing (Init Patch), so the editor can't see it. With this on, "
-                         "while nothing is being edited for a second, the editor reads the Peak's current sound (a read; "
-                         "the sound doesn't change) and takes the Peak's values when they differ. Not asked while Compare "
-                         "is held or when sending through the DAW.");
-    watchBox.onChange = [this] { proc.session().setWatch ((PatchSession::Watch) (watchBox.getSelectedId() - 1)); };
-
     clearMonitor.onClick = [this]
     {
         monitorLines.clear();
@@ -150,8 +140,7 @@ SetupPage::SetupPage (PeakProcessor& p) : proc (p)
     for (juce::Component* c : { (juce::Component*) &inBox, (juce::Component*) &outBox, (juce::Component*) &channelBox,
                                 (juce::Component*) &modeBox, (juce::Component*) &follow, (juce::Component*) &notesThru,
                                 (juce::Component*) &playheads, (juce::Component*) &check, (juce::Component*) &sendAll,
-                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &watchBox,
-                                (juce::Component*) &clearMonitor,
+                                (juce::Component*) &rescan, (juce::Component*) &testNote, (juce::Component*) &clearMonitor,
                                 (juce::Component*) &copyMonitor })
         addAndMakeVisible (c);
 }
@@ -183,22 +172,6 @@ void SetupPage::refresh()
 
     const auto st = proc.linkStatus();
     testNote.setEnabled (st.hostOutput || st.outOpen);
-
-    {
-        const auto& w = proc.session().getWatchStats();
-        juce::String t;
-        t << "asked " << w.asked << ", answered " << w.answered << ", no reply " << w.timeouts << ", skipped " << w.skipped;
-        if (w.lastReplyMs >= 0)
-            t << ", reply " << juce::roundToInt (w.lastReplyMs) << " ms (slowest " << juce::roundToInt (w.slowestReplyMs) << ")";
-        t << ", changes taken " << w.taken;
-        if (w.lastTaken.isNotEmpty())
-            t << ", last " << w.lastTaken;
-        if (t != watchText)
-        {
-            watchText = t;
-            repaint (watchTextArea);
-        }
-    }
 
     report = diagnose (st);
     juce::String key;
@@ -315,11 +288,6 @@ void SetupPage::resized()
     }
     left.removeFromTop (8);
     testNote.setBounds (left.removeFromTop (28).withTrimmedLeft (130).removeFromLeft (120));
-    // Below the note text and the version line (paint): Watch the sound, then its counters.
-    left.removeFromTop (16 + 96 + 12 + 20 + 12);
-    watchBox.setBounds (left.removeFromTop (28).withTrimmedLeft (130).removeFromLeft (230));
-    left.removeFromTop (4);
-    watchTextArea = left.removeFromTop (34).withTrimmedLeft (130);
 
     // Right: status title, verdict card, steps, monitor
     r.removeFromLeft (kGap);
@@ -385,11 +353,6 @@ void SetupPage::paint (juce::Graphics& g)
         g.drawText (juce::String ("Peak Control ") + PEAK_VERSION_TEXT, t.withTrimmedLeft (6),
                     juce::Justification::centredLeft, true);
     }
-    left.removeFromTop (12);
-    label (g, "Watch sound", left.removeFromTop (28).withWidth (124));
-    g.setColour (ink3);
-    g.setFont (fontBody (11.0f));
-    g.drawFittedText (watchText, watchTextArea, juce::Justification::topLeft, 2);
 
     r.removeFromLeft (kGap);
     sectionTitle (g, "Status", r.removeFromTop (28));
@@ -475,17 +438,17 @@ void SetupPage::paintMonitor (juce::Graphics& g)
     auto bar = monitorArea.withHeight (32).withTrimmedRight (150).reduced (16, 0);
     g.setColour (ink);
     g.setFont (fontUi (13.0f));
-    g.drawText ("FROM THE PEAK", bar, juce::Justification::centredLeft);
+    g.drawText ("TO AND FROM THE PEAK", bar, juce::Justification::centredLeft);
     g.setColour (ink3);
     g.setFont (fontBody (12.0f));
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("newest first \xc2\xb7 scroll for older lines \xc2\xb7 turn a knob on the Peak")),
-                bar.withTrimmedLeft (120), juce::Justification::centredLeft, true);
+    g.drawText (juce::String (juce::CharPointer_UTF8 ("newest first \xc2\xb7 <- from the Peak, -> from the editor \xc2\xb7 scroll for older lines")),
+                bar.withTrimmedLeft (170), juce::Justification::centredLeft, true);
 }
 
 juce::String MonitorList::text (const PeakLink::MonitorLine& l)
 {
-    return juce::Time (l.timeMs).formatted ("%H:%M:%S") + "  " + (l.channel > 0 ? "ch " + juce::String (l.channel) : juce::String ("--"))
-         + "  " + l.what + "  " + l.name;
+    return juce::Time (l.timeMs).formatted ("%H:%M:%S") + "  " + (l.out ? "->" : "<-") + "  "
+         + (l.channel > 0 ? "ch " + juce::String (l.channel) : juce::String ("--")) + "  " + l.what + "  " + l.name;
 }
 
 void MonitorList::paint (juce::Graphics& g)
@@ -499,7 +462,7 @@ void MonitorList::paint (juce::Graphics& g)
     {
         g.setColour (ink3);
         g.setFont (fontBody (13.0f));
-        g.drawText ("Nothing from the Peak yet.", lines.removeFromTop (22), juce::Justification::centredLeft);
+        g.drawText ("Nothing to or from the Peak yet.", lines.removeFromTop (22), juce::Justification::centredLeft);
         return;
     }
     const int pluginCh = channel ? channel() : 0;
@@ -515,6 +478,8 @@ void MonitorList::paint (juce::Graphics& g)
         const bool otherCh = l.channel > 0 && l.channel != pluginCh;
         g.setColour (ink3);
         g.drawText (juce::Time (l.timeMs).formatted ("%H:%M:%S"), row.removeFromLeft (78), juce::Justification::centredLeft);
+        g.setColour (l.out ? ink3 : ink2);
+        g.drawText (l.out ? "->" : "<-", row.removeFromLeft (28), juce::Justification::centredLeft);
         g.setColour (otherCh ? led : ink2);
         g.drawText (l.channel > 0 ? "ch " + juce::String (l.channel) : juce::String ("--"), row.removeFromLeft (52),
                     juce::Justification::centredLeft);

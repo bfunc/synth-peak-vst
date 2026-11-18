@@ -58,28 +58,6 @@ public:
     bool savedOnPcOnly() const { return baselinePcOnly; }  // the reference is a save that only the PC has
     void resync();                           // skip what arrived while this copy was not the main one
 
-    // Before a save: read what the Peak is playing and compare it with the editor (the name and bytes the editor does
-    // not map are not compared). The answer comes from tick(). NoAnswer: not connected or no reply.
-    enum class PeakCheck { Same, Differs, NoAnswer };
-    void checkPeak (std::function<void (PeakCheck, const peak::PatchData& peakPatch)> done);
-    // The Peak's sound into the editor; the reference (slot, saved marks) stays, so the LED shows how far it is.
-    void takePeakSound (const peak::PatchData&);
-    void sendToPeak() { pushAll(); }         // the editor's patch into the edit buffer, then read back
-
-    // Watch the Peak's sound (poll test): a change on the Peak may send nothing (Init Patch), so while nothing is being
-    // edited the editor reads the edit buffer every few seconds and takes the Peak's values when they differ, keeping
-    // the reference (like takePeakSound). Not saved; on by default.
-    enum class Watch { Off, Every2s, Every250ms };
-    Watch getWatch() const { return watch; }
-    void setWatch (Watch w) { watch = w; }
-    struct WatchStats
-    {
-        int asked = 0, answered = 0, skipped = 0, taken = 0, timeouts = 0;
-        double lastReplyMs = -1, slowestReplyMs = -1;
-        juce::String lastTaken;  // when and how many values, for the test
-    };
-    const WatchStats& getWatchStats() const { return watchStats; }
-
     peak::PatchData build() const;           // the editor's patch: raw bytes + current values + name
     std::string name() const;
     void setName (const std::string&);
@@ -126,27 +104,6 @@ private:
     uint32_t patchCursor = 0;
     uint32_t programSeen = 0;
     double autoFetchAtMs = -1;
-
-    // The Peak's sound changed without a program change (Init Patch on the Peak, ...): re-read it once the editor is
-    // quiet, and take its values without moving the reference.
-    uint32_t soundSeen = 0;
-    double outsideAtMs = -1;
-    double patchSentMs = -1.0e9;  // the editor's last whole-patch send
-    bool fetchKeepsReference = false;
-
-    std::function<void (PeakCheck, const peak::PatchData&)> checkDone;
-    bool checkPending = false;
-    double checkAskedMs = 0;
-
-    // Watch (see getWatch): a watch read is a fetch with watchAsk set.
-    Watch watch = Watch::Every2s;
-    WatchStats watchStats;
-    bool watchAsk = false;
-    double nextWatchMs = 0, sentMsAtWatch = 0, patchMsAtWatch = 0;
-    int watchFailures = 0;
-    peak::Values valuesAtWatch;
-    void watchTick (double nowMs, bool connected);
-    void takeWatched (const peak::PatchData&, double nowMs);
 
     bool editorIsMaster = true;
     bool stateLoaded = false;     // a saved state (project) brought its own patch

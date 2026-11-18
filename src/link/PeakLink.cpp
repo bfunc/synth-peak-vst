@@ -255,10 +255,22 @@ void PeakLink::answerTestNote (bool heard)
         st.noteTest = heard ? peak::NoteTest::Heard : peak::NoteTest::NotHeard;
 }
 
-void PeakLink::log (int channel, const juce::String& what, const juce::String& name)
+void PeakLink::log (int channel, const juce::String& what, const juce::String& name, bool out)
 {
     ++monitorSeq;
-    monitor[monitorSeq % monitor.size()] = { monitorSeq, juce::Time::currentTimeMillis(), channel, what, name };
+    monitor[monitorSeq % monitor.size()] = { monitorSeq, juce::Time::currentTimeMillis(), channel, what, name, out };
+}
+
+void PeakLink::logOut (int channel, const juce::String& what, const juce::String& name)
+{
+    const juce::ScopedLock sl (stateLock);
+    log (channel, what, name, true);
+}
+
+void PeakLink::sendSysexLogged (const std::vector<uint8_t>& message, const juce::String& name)
+{
+    logOut (0, "SysEx " + juce::String ((int) message.size()) + " bytes", name);
+    sendSysex (message);
 }
 
 void PeakLink::addClient (const void* id)
@@ -337,7 +349,6 @@ void PeakLink::noteSentThroughHost (int paramIndex, int value) { rememberSent (p
 void PeakLink::rememberSent (int paramIndex, int value, bool fromAudioThread)
 {
     const double t = nowMs();
-    lastSentMs.store (t);
     auto put = [&]
     {
         sent[sentNext] = { paramIndex, value, t };
@@ -372,22 +383,29 @@ void PeakLink::probe()
         const juce::ScopedLock sl (stateLock);
         st.inquirySentMs = nowMs();
     }
-    sendSysex (peak::requestDeviceInquiry());
+    sendSysexLogged (peak::requestDeviceInquiry(), "who are you? (device inquiry)");
 }
 
-void PeakLink::requestEditBuffer() { sendSysex (peak::requestEditBuffer()); }
-void PeakLink::requestPatch (int bank, int slot) { sendSysex (peak::requestPatch (bank, slot)); }
-void PeakLink::sendEditBuffer (const peak::PatchData& d) { sendSysex (peak::editBufferDump (d)); }
+void PeakLink::requestEditBuffer() { sendSysexLogged (peak::requestEditBuffer(), "request the current patch"); }
+void PeakLink::requestPatch (int bank, int slot)
+{
+    sendSysexLogged (peak::requestPatch (bank, slot), "request stored patch " + juce::String (peak::slotLabel (bank, slot)));
+}
+void PeakLink::sendEditBuffer (const peak::PatchData& d)
+{
+    sendSysexLogged (peak::editBufferDump (d), "current patch (into the edit buffer, no slot changes)");
+}
 
 void PeakLink::writeSlot (int bank, int slot, const peak::PatchData& d)
 {
     if (bank < 1 || bank > 4 || slot < 0 || slot > 127)
         return;
-    sendSysex (peak::writeSlotDump (bank, slot, d));
+    sendSysexLogged (peak::writeSlotDump (bank, slot, d), "write into " + juce::String (peak::slotLabel (bank, slot)));
 }
 
 void PeakLink::sendProgramChange (int channel, int bank, int slot)
 {
+    logOut (channel, "Program " + juce::String (peak::slotLabel (bank, slot)), "pick this patch on the Peak");
     for (const auto& m : peak::programChange (channel, bank, slot))
         sendShort (m.status, m.d1, m.d2);
 }
@@ -478,16 +496,12 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     {
         if (cc == 6)
         {
-            // An NRPN the editor has no parameter for. 62:0 comes with the wave button, patch changes and (it seems)
-            // Init Patch: the sound may have changed, so the patch session re-reads it.
+            // An NRPN the editor has no parameter for (62:0 comes with the wave button and patch changes): shown, not used.
             const int msb = nrpnMsbIn[(size_t) (ch - 1)] - 1, lsb = nrpnLsbIn[(size_t) (ch - 1)] - 1;
             if (msb < 0 || lsb < 0)
                 return;  // Data Entry without an NRPN
-            const bool soundChanged = msb == 62 && lsb == 0;
-            if (soundChanged)
-                ++soundChangedIn;
             log (ch, "NRPN " + juce::String (msb) + ":" + juce::String (lsb) + " = " + juce::String (m.getControllerValue()),
-                 soundChanged ? "the Peak's sound changed: reading it" : "not a panel parameter");
+                 "not a panel parameter");
             return;
         }
         // NRPN parts, the first half of a pair and Bank Select are shown with what they complete.
@@ -510,23 +524,6 @@ void PeakLink::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMess
     }
     ++st.ccInCount;
     st.lastCcChannel = ch;
-
-    // Many different parameters at once (not a knob turn): the whole sound changed.
-    if (t - burstStartMs > kBurstMs)
-    {
-        burstStartMs = t;
-        burstCount = 0;
-        burstMarks.fill (0);
-    }
-    if ((size_t) change->index < burstMarks.size() && burstMarks[(size_t) change->index] == 0)
-    {
-        burstMarks[(size_t) change->index] = 1;
-        if (++burstCount == kBurstParams)
-        {
-            ++soundChangedIn;
-            log (ch, juce::String (kBurstParams) + "+ parameters at once", "the Peak's sound changed: reading it");
-        }
-    }
 
     ++paramInSeq;
     paramsIn[paramInSeq % paramsIn.size()] = { paramInSeq, ch, change->index, change->value };
@@ -566,12 +563,6 @@ PeakLink::ProgramIn PeakLink::lastProgramChange() const
 {
     const juce::ScopedLock sl (stateLock);
     return programIn;
-}
-
-uint32_t PeakLink::soundChangedSeq() const
-{
-    const juce::ScopedLock sl (stateLock);
-    return soundChangedIn;
 }
 
 peak::LinkStatus PeakLink::status (int pluginChannel, bool followChannel) const

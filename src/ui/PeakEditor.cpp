@@ -102,7 +102,7 @@ private:
             juce::ModalCallbackFunction::create ([p = &proc, b, s, n = name.getText().toStdString()] (int ok)
             {
                 if (ok == 1)
-                    saveChecked (p, b, s, n, false);
+                    p->library().saveToSlot (b, s, n);
             }));
         if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
             box->dismiss();
@@ -110,46 +110,9 @@ private:
 
     void saveOnPc()
     {
-        saveChecked (&proc, bank.getSelectedId(), slot.getSelectedId() - 1, name.getText().toStdString(), true);
+        proc.library().saveOnPcOnly (bank.getSelectedId(), slot.getSelectedId() - 1, name.getText().toStdString());
         if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
             box->dismiss();
-    }
-
-    // Save what you hear: first ask the Peak what it is playing. If the editor missed a change made on the Peak (Init
-    // Patch, ...), ask which sound to save; both then play it.
-    static void saveChecked (PeakProcessor* p, int b, int s, std::string n, bool pcOnly)
-    {
-        auto save = [p, b, s, n, pcOnly]
-        {
-            if (pcOnly)
-                p->library().saveOnPcOnly (b, s, n);
-            else
-                p->library().saveToSlot (b, s, n);
-        };
-        p->session().checkPeak ([p, b, s, save, pcOnly] (PatchSession::PeakCheck r, const PatchData& peakPatch)
-        {
-            if (r == PatchSession::PeakCheck::Same || (r == PatchSession::PeakCheck::NoAnswer && pcOnly))
-                return save();
-            if (r == PatchSession::PeakCheck::NoAnswer)
-                return;  // the session's status says why; nothing written
-            juce::AlertWindow::showYesNoCancelBox (
-                juce::MessageBoxIconType::QuestionIcon, "Which sound to save?",
-                "The Peak is playing a different sound than the editor (for example after Init Patch on the Peak), "
-                "so the editor has not been showing what you hear.\n\nThe Peak plays \"" + juce::String (patchName (peakPatch))
-                    + "\"; the editor has \"" + juce::String (p->session().name()) + "\".\nWhich one goes into "
-                    + slotLabel (b, s) + (pcOnly ? " on this PC" : "") + "? Afterwards the editor and the Peak both play it.",
-                "The Peak's sound", "The editor's", "Cancel", nullptr,
-                juce::ModalCallbackFunction::create ([p, peakPatch, save] (int choice)
-                {
-                    if (choice == 1)
-                        p->session().takePeakSound (peakPatch);
-                    else if (choice == 2)
-                        p->session().sendToPeak();
-                    else
-                        return;
-                    save();
-                }));
-        });
     }
 
     PeakProcessor& proc;
